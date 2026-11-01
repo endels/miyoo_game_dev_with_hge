@@ -1,0 +1,25 @@
+# Copy to miyoo_net.conf and fill in. miyoo_net.conf is git-ignored.
+# The PC connect script only needs the WiFi settings; MIYOO_USER/MIYOO_PASS
+# are used by miyoo_bench_hotspot.sh for SSH.
+
+# Windows WLAN adapter name; empty = auto-detect via PowerShell.
+WIFI_IFACE=""
+
+AP_SSID="MiyooMini+APOnionOS"
+# Hotspot password: see /mnt/SDCARD/.tmp_update/config/hostapd.conf on the device.
+AP_PASS="change-me"
+
+MIYOO_IP="192.168.100.100"
+SSH_PORT="22"
+
+# Device SSH (used by miyoo_bench_hotspot.sh, not by miyoo_connect.sh).
+MIYOO_USER="onion"
+MIYOO_PASS="change-me"
+
+# Windows WLAN profile name created by the script.
+PROFILE_NAME="MiyooMiniAP"
+
+# Connection attempts / cooldown.
+MAX_ATTEMPTS="3"
+RETRY_DELAY="6"
+COOLDOWN="60"

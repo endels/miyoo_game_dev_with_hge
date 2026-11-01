@@ -1,0 +1,4 @@
+miyoo_net.conf
+.miyoo_connect.state
+.miyoo_connect.lock/
+*.log
