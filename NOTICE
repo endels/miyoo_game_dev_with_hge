@@ -1,0 +1,25 @@
+HGE-SDL -- a fork of Haaf's Game Engine 1.81
+==========================================
+
+Original work:
+    Haaf's Game Engine 1.81
+    Copyright (c) 2003-2008, Relish Games
+    http://hge.relishgames.com
+    Licensed under the zlib/libpng license (see LICENSE-HGE.txt).
+
+THIS IS A MODIFIED VERSION, NOT THE ORIGINAL SOFTWARE.
+The Direct3D 8 / Win32 graphics and platform backend has been replaced with
+SDL2 + OpenGL ES 2.0 (desktop builds use OpenGL 2.1, same code path).
+This fork is not affiliated with, endorsed by or supported by Relish Games.
+
+Modifications:
+    Copyright (c) 2026 <project owner>
+    Also distributed under the zlib/libpng license.
+
+Third-party components:
+    SDL2            zlib license        https://www.libsdl.org
+    miniaudio       public domain/MIT   (M5 audio)
+    stb_vorbis      public domain/MIT   (M5 audio)
+
+Note: the original HGE shipped BASS, which is NOT covered by the HGE licence
+and requires a commercial licence for commercial use. BASS is not used here.

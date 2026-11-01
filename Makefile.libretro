@@ -1,0 +1,54 @@
+# Makefile.libretro — build the bubble game as a libretro core.
+#
+# The game logic is reused unchanged. plat_libretro runs bubble_game_main() on a
+# coroutine (one frame per retro_run) and renders with SDL's software renderer
+# into an in-memory surface; the core hands that surface to RetroArch, which
+# owns video/audio/input/exit (miyoomini MI_GFX driver on the Miyoo).
+#
+# Usage: make -f Makefile.libretro
+
+TC        := /opt/miyoomini-toolchain
+CC        := $(TC)/bin/arm-linux-gnueabihf-gcc
+CXX       := $(TC)/bin/arm-linux-gnueabihf-g++
+
+SDL_INC   := third_party/SDL2/include
+SDL_LIB   := libs/libSDL2-2.0.so.0
+
+BUILD     := build-libretro
+TARGET    := $(BUILD)/bubble_libretro.so
+
+ARCH      := -marm -mtune=cortex-a7 -march=armv7ve+simd -mfpu=neon-vfpv4 -mfloat-abi=hard
+COMMON    := $(ARCH) -O2 -g -fPIC -DNDEBUG
+DEFS      := -DHGE_LIBRETRO=1 -DSDL_MAIN_HANDLED
+INCS      := -Iinclude -Isrc -I$(SDL_INC) -Ithird_party/libretro
+
+CXXFLAGS  := $(COMMON) -std=c++14 $(DEFS) $(INCS) -Wall -Wextra -Wno-unused-parameter
+CFLAGS    := $(COMMON) -std=gnu99 $(DEFS) $(INCS)
+
+LDFLAGS   := $(ARCH) -shared -Wl,--allow-shlib-undefined -Wl,-rpath-link,libs
+LDLIBS    := $(SDL_LIB) -lstdc++ -lm -lpthread -ldl -lrt -lc
+
+SRC_CXX   := src/app/bubble/main.cpp \
+             src/app/bubble/assets.cpp \
+             src/app/bubble/game.cpp \
+             src/app/bubble/audio.cpp \
+             src/app/bubble/bubble_libretro.cpp \
+             src/platform/plat_libretro.cpp \
+             src/gfx/gfx_blit.cpp
+
+OBJS      := $(patsubst %.cpp,$(BUILD)/%.o,$(SRC_CXX))
+
+.PHONY: all clean
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+	@echo "--- built $@"; file $@ 2>/dev/null || true
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -rf $(BUILD)

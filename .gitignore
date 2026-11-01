@@ -1,0 +1,27 @@
+# Build outputs
+/build-miyoo/
+/build-libretro/
+/build-native/
+/CMakeFiles/
+/CMakeCache.txt
+*.o
+*.d
+*.a
+
+# Deploy build outputs
+/package/App/Bubble/bin/
+/package/App/Bubble/bubble_libretro.so
+
+# Generated / runtime files
+/package/App/Bubble/ra_append.cfg
+/package/App/Bubble/*.log
+/package/App/Bubble/*.ppm
+/package/App/Bubble/fb*.bin
+*.log
+*.ppm
+fb*.bin
+hello.ko
+
+# Python cache
+__pycache__/
+*.py[cod]

@@ -1,0 +1,57 @@
+# Makefile.miyoo — cross-compile bubble_level1 for Miyoo Mini+ (SigmaStar, Onion)
+#
+# Pure-software SDL2 renderer route (parasyte/Onion SDL2 -> /dev/fb0).
+# Build the same sources as the desktop CMake target, but:
+#   * use the device-matched buildroot toolchain (/opt/miyoomini-toolchain, glibc 2.28)
+#   * link the Miyoo SDL2 instead of building SDL2 from source
+#   * define HGE_PLATFORM_MIYOO + SDL_MAIN_HANDLED
+#
+# Usage:  make -f Makefile.miyoo          (produces build-miyoo/bubble_level1)
+
+TC        := /opt/miyoomini-toolchain
+SYSROOT   := $(TC)/arm-linux-gnueabihf/libc
+CC        := $(TC)/bin/arm-linux-gnueabihf-gcc
+CXX       := $(TC)/bin/arm-linux-gnueabihf-g++
+
+SDL_INC   := third_party/SDL2/include
+SDL_LIB   := libs/libSDL2-2.0.so.0
+
+BUILD     := build-miyoo
+TARGET    := $(BUILD)/bubble_level1
+
+ARCH      := -marm -mtune=cortex-a7 -march=armv7ve+simd -mfpu=neon-vfpv4 -mfloat-abi=hard
+
+COMMON    := $(ARCH) -O2 -g -fPIC -DNDEBUG
+DEFS      := -DHGE_PLATFORM_MIYOO=1 -DSDL_MAIN_HANDLED
+INCS      := -Iinclude -Isrc -I$(SDL_INC)
+
+CXXFLAGS  := $(COMMON) -std=c++14 $(DEFS) $(INCS) -Wall -Wextra -Wno-unused-parameter
+CFLAGS    := $(COMMON) -std=gnu99 $(DEFS) $(INCS)
+
+# Link against the device SDL2 .so directly (SONAME libSDL2-2.0.so.0 is recorded).
+LDFLAGS   := $(ARCH) -Wl,--allow-shlib-undefined -Wl,-rpath-link,libs
+LDLIBS    := $(SDL_LIB) -lstdc++ -lmi_sys -lmi_gfx -lmi_common -lm -lpthread -ldl -lrt -lc
+
+SRC_CXX   := src/app/bubble/main.cpp \
+             src/app/bubble/assets.cpp \
+             src/app/bubble/game.cpp \
+             src/app/bubble/audio.cpp \
+             src/platform/plat_sdl2.cpp \
+             src/gfx/gfx_sdl.cpp
+
+OBJS      := $(patsubst %.cpp,$(BUILD)/%.o,$(SRC_CXX))
+
+.PHONY: all clean
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	@mkdir -p $(@D)
+	$(CXX) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+	@echo "--- built $@"; file $@ 2>/dev/null || true
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -rf $(BUILD)
