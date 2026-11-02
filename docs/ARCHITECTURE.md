@@ -55,6 +55,9 @@ engine/src         引擎实现（对游戏不可见）
 - Miyoo：软件渲染 + `MI_GFX`/`/dev/fb0` 呈现。
 - 桌面：GL 直绘。
 - blit：CPU 光栅化到 ARGB 帧缓冲，供 libretro 与低功耗目标使用。
+- MMIYOO 的 SDL renderer 没有 `RenderCopyEx`。`gfx_sdl` 把带
+  `SetTransform` 的 quad 先用 CPU 光栅化到 scratch texture，再走普通
+  `RenderCopy`；`gfx_blit` 直接按三角形光栅化。这样三个后端语义一致。
 
 ## libretro 宿主
 
@@ -74,3 +77,17 @@ const GameInfo& GetGameInfo();
 
 `hge_config.h` 生成 `HGE_FEATURE_AUDIO/THREADS/FILESYSTEM`。目前 `THREADS`
 已接入 blitter（单线程/多线程路径）；音频/文件系统的裁剪留给 MCU 阶段。
+
+## 路线图
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| P0 | 目录/构建/服务拆分，CMake preset + 工具链 | 已完成 |
+| P1 | 平台/主循环/语义输入/config/后端一致性测试 | 已完成 |
+| P2 | 公共 API 收口、hello_game 边界探针、通用 libretro 宿主、CI | 已完成 |
+| 迭代期 | 实际游戏需求驱动 API 稳定；修 bug、补测试、考虑第二个游戏 | 进行中 |
+| P3 | 引擎/游戏物理拆仓、资产 Release、SDL2 submodule、版本 tag | **暂缓**（第二个游戏验证后再评估） |
+| P4 | RT-Thread / STM32H7 MCU 可行性 spike（只保留架构，不实现） | 未开始 |
+
+原则：先让 API 在真实迭代中稳定，再拆仓；不为了拆而拆。P3 之前继续在
+monorepo 内演进，公共头变更需同步 `docs/ARCHITECTURE.md` 与边界探针。

@@ -99,6 +99,39 @@ int main()
         g->ReleaseTexture(tex);
     }
 
+    // 3b. rotation via SetTransform
+    {
+        u32 rotpx[16];
+        for (int i = 0; i < 16; ++i) rotpx[i] = 0xFFFF0000u;
+        rotpx[0] = rotpx[1] = rotpx[4] = rotpx[5] = 0xFF00FF00u;
+        IGfxTexture* rot = g->CreateTexture(4, 4, rotpx, 16);
+        if (!rot) {
+            fprintf(stderr, "[blit-test] rotation texture failed\n");
+            ++g_failures;
+        } else {
+            GfxVertex v[4];
+            for (int i = 0; i < 4; ++i) { v[i].z = 0.0f; v[i].color = 0xFFFFFFFFu; }
+            v[0].x = 380; v[0].y = 170; v[0].u = 0; v[0].v = 0;
+            v[1].x = 580; v[1].y = 170; v[1].u = 1; v[1].v = 0;
+            v[2].x = 380; v[2].y = 370; v[2].u = 0; v[2].v = 1;
+            v[3].x = 580; v[3].y = 370; v[3].u = 1; v[3].v = 1;
+
+            g->BeginFrame();
+            g->Clear(0xFF000000);
+            g->SetBlend(GFX_BLEND_NONE);
+            g->SetTransform(480, 270, 0, 0, 1.5707964f, 1, 1);
+            g->DrawQuads(rot, v, 1);
+            g->SetTransform(0, 0, 0, 0, 0, 1, 1);
+            g->EndFrame();
+            fb = BlitFramebuffer(&w, &h, &pitch);
+            if (pixel(fb, pitch, 373, 187) != 0xFF00FF00u)
+                fail("rotation top-right", pixel(fb, pitch, 373, 187), 0xFF00FF00u);
+            if (pixel(fb, pitch, 267, 187) != 0xFFFF0000u)
+                fail("rotation top-left", pixel(fb, pitch, 267, 187), 0xFFFF0000u);
+            g->ReleaseTexture(rot);
+        }
+    }
+
     // 4. alpha blend: 0x80 white over black ~= 0x808080
     g->BeginFrame();
     g->Clear(0xFF000000);

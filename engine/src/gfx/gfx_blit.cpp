@@ -32,6 +32,40 @@ const int OUT_H = 480;
 
 inline int div255(int x) { return (x + 1 + (x >> 8)) >> 8; }
 
+// [a b c d e f]: x' = a*x + c*y + e, y' = b*x + d*y + f.
+// Keep in sync with matAffine2D() in gfx_gl.cpp.
+void affine2D(f32* m, f32 px, f32 py, f32 dx, f32 dy,
+              f32 rot, f32 hs, f32 vs)
+{
+    if (hs == 0.0f) hs = 1.0f;
+    if (vs == 0.0f) vs = 1.0f;
+    const f32 c = cosf(rot), s = sinf(rot);
+    const f32 a =  c * hs, b = s * hs;
+    const f32 cc = -s * vs, d = c * vs;
+    m[0] = a;  m[1] = b;
+    m[2] = cc; m[3] = d;
+    m[4] = px + dx - (a * px + cc * py);
+    m[5] = py + dy - (b * px + d  * py);
+}
+
+bool affineIdentity(const f32* m)
+{
+    return m[0] == 1.0f && m[1] == 0.0f && m[2] == 0.0f &&
+           m[3] == 1.0f && m[4] == 0.0f && m[5] == 0.0f;
+}
+
+bool barycentric(f32 px, f32 py, f32 ax, f32 ay, f32 bx, f32 by,
+                 f32 cx, f32 cy, f32* w0, f32* w1, f32* w2)
+{
+    const f32 d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+    if (fabsf(d) < 1.0e-6f) return false;
+    *w0 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / d;
+    *w1 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / d;
+    *w2 = 1.0f - *w0 - *w1;
+    const f32 eps = -1.0e-4f;
+    return *w0 >= eps && *w1 >= eps && *w2 >= eps;
+}
+
 class BlitTexture : public IGfxTexture {
 public:
     int w = 0, h = 0;
@@ -44,6 +78,8 @@ struct QuadItem {
     GfxVertex v[4];
     GfxBlend blend;
     int cx0, cy0, cx1, cy1;   // captured scissor (unclamped)
+    bool xf;
+    f32 xfm[6];
 };
 
 const void* g_fbPtr = nullptr;
@@ -138,7 +174,12 @@ public:
         else m_clip = false;
     }
 
-    void SetTransform(f32, f32, f32, f32, f32, f32, f32) override {}
+    void SetTransform(f32 x, f32 y, f32 dx, f32 dy,
+                      f32 rot, f32 hs, f32 vs) override
+    {
+        affine2D(m_xf, x, y, dx, dy, rot, hs, vs);
+        m_xfActive = !affineIdentity(m_xf);
+    }
     void SetBlend(GfxBlend mode) override { m_blend = mode; }
     void SetTextureFilter(GfxFilter) override {}
 
@@ -147,13 +188,14 @@ public:
         if (!verts || quadCount <= 0) return;
         BlitTexture* t = static_cast<BlitTexture*>(tex);
 
+        const f32* xf = m_xfActive ? m_xf : nullptr;
         if (!m_defer) {
             int cx0 = 0, cy0 = 0, cx1 = m_w, cy1 = m_h;
             if (m_clip) { cx0 = m_cx; cy0 = m_cy; cx1 = m_cx + m_cw; cy1 = m_cy + m_ch; }
             for (int i = 0; i < quadCount; ++i) {
                 const GfxVertex* v = verts + i * 4;
-                if (t) drawQuad(t, v, m_blend, cx0, cy0, cx1, cy1);
-                else   drawSolidQuad(v, m_blend, cx0, cy0, cx1, cy1);
+                if (t) drawQuad(t, v, xf, m_blend, cx0, cy0, cx1, cy1);
+                else   drawSolidQuad(v, xf, m_blend, cx0, cy0, cx1, cy1);
             }
             return;
         }
@@ -164,6 +206,8 @@ public:
             q.tex = t;
             q.v[0] = v[0]; q.v[1] = v[1]; q.v[2] = v[2]; q.v[3] = v[3];
             q.blend = m_blend;
+            q.xf = m_xfActive;
+            for (int k = 0; k < 6; ++k) q.xfm[k] = m_xf[k];
             if (m_clip) { q.cx0 = m_cx; q.cy0 = m_cy; q.cx1 = m_cx + m_cw; q.cy1 = m_cy + m_ch; }
             else        { q.cx0 = 0;     q.cy0 = 0;     q.cx1 = m_w;        q.cy1 = m_h; }
             m_quads.push_back(q);
@@ -338,8 +382,9 @@ private:
             const int cx1 = std::min(q.cx1, m_w);
             const int cy1 = std::min(q.cy1, by1);
             if (cx0 >= cx1 || cy0 >= cy1) continue;
-            if (q.tex) drawQuad(q.tex, q.v, q.blend, cx0, cy0, cx1, cy1);
-            else       drawSolidQuad(q.v, q.blend, cx0, cy0, cx1, cy1);
+            const f32* xf = q.xf ? q.xfm : nullptr;
+            if (q.tex) drawQuad(q.tex, q.v, xf, q.blend, cx0, cy0, cx1, cy1);
+            else       drawSolidQuad(q.v, xf, q.blend, cx0, cy0, cx1, cy1);
         }
     }
 
@@ -382,9 +427,111 @@ private:
         }
     }
 
-    void drawSolidQuad(const GfxVertex* q, GfxBlend blend,
+    void drawTransformedQuad(BlitTexture* t, const GfxVertex* q, const f32* xf,
+                             GfxBlend blend, int cx0, int cy0, int cx1, int cy1)
+    {
+        f32 vx[4], vy[4];
+        f32 minx = 1.0e30f, miny = 1.0e30f;
+        f32 maxx = -1.0e30f, maxy = -1.0e30f;
+        for (int i = 0; i < 4; ++i) {
+            const f32 lx = xf[0] * q[i].x + xf[2] * q[i].y + xf[4];
+            const f32 ly = xf[1] * q[i].x + xf[3] * q[i].y + xf[5];
+            vx[i] = m_ox + lx * m_s;
+            vy[i] = m_oy + ly * m_s;
+            if (vx[i] < minx) minx = vx[i];
+            if (vx[i] > maxx) maxx = vx[i];
+            if (vy[i] < miny) miny = vy[i];
+            if (vy[i] > maxy) maxy = vy[i];
+        }
+
+        int x0 = std::max(std::max((int)floorf(minx), cx0), 0);
+        int y0 = std::max(std::max((int)floorf(miny), cy0), 0);
+        int x1 = std::min(std::min((int)ceilf(maxx), cx1), m_w);
+        int y1 = std::min(std::min((int)ceilf(maxy), cy1), m_h);
+        if (x0 >= x1 || y0 >= y1) return;
+
+        const bool hasTex = t && !t->px.empty();
+        const int tw = hasTex ? t->w : 1;
+        const int th = hasTex ? t->h : 1;
+        const u32 c = q[0].color;
+        const int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        const int a = (c >> 24) & 0xFF;
+        const bool whiteMod = (r == 255 && g == 255 && b == 255);
+
+        for (int dy = y0; dy < y1; ++dy) {
+            const f32 fy = (f32)dy + 0.5f;
+            u32* drow = &m_fb[(size_t)dy * m_w];
+            for (int dx = x0; dx < x1; ++dx) {
+                const f32 fx = (f32)dx + 0.5f;
+                f32 b0, b1, b2, u, v;
+                if (barycentric(fx, fy, vx[0], vy[0], vx[1], vy[1],
+                                vx[2], vy[2], &b0, &b1, &b2)) {
+                    u = b0 * q[0].u + b1 * q[1].u + b2 * q[2].u;
+                    v = b0 * q[0].v + b1 * q[1].v + b2 * q[2].v;
+                } else if (barycentric(fx, fy, vx[1], vy[1], vx[3], vy[3],
+                                       vx[2], vy[2], &b0, &b1, &b2)) {
+                    u = b0 * q[1].u + b1 * q[3].u + b2 * q[2].u;
+                    v = b0 * q[1].v + b1 * q[3].v + b2 * q[2].v;
+                } else {
+                    continue;
+                }
+
+                u32 texel = 0xFFFFFFFFu;
+                if (hasTex) {
+                    int tx = (int)(u * (f32)tw);
+                    int ty = (int)(v * (f32)th);
+                    if (tx < 0) tx = 0; else if (tx >= tw) tx = tw - 1;
+                    if (ty < 0) ty = 0; else if (ty >= th) ty = th - 1;
+                    texel = t->px[(size_t)ty * tw + tx];
+                }
+
+                int ta = (int)(texel >> 24);
+                if (ta == 0 && blend == GFX_BLEND_ALPHA) continue;
+                if (a != 255) ta = div255(ta * a);
+                int tr = (int)((texel >> 16) & 0xFF);
+                int tg = (int)((texel >> 8) & 0xFF);
+                int tb = (int)(texel & 0xFF);
+                if (!whiteMod) {
+                    tr = div255(tr * r); tg = div255(tg * g); tb = div255(tb * b);
+                }
+
+                u32* d = &drow[dx];
+                const u32 dst = *d;
+                if (blend == GFX_BLEND_NONE || ta == 255) {
+                    *d = 0xFF000000u | ((u32)tr << 16) | ((u32)tg << 8) | (u32)tb;
+                } else if (blend == GFX_BLEND_ALPHA) {
+                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF;
+                    const int db = dst & 0xFF, ia = 255 - ta;
+                    *d = 0xFF000000u
+                       | ((u32)div255(tr * ta + dr * ia) << 16)
+                       | ((u32)div255(tg * ta + dg * ia) << 8)
+                       |  (u32)div255(tb * ta + db * ia);
+                } else if (blend == GFX_BLEND_ADD) {
+                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF;
+                    const int db = dst & 0xFF;
+                    *d = 0xFF000000u
+                       | ((u32)std::min(255, dr + tr) << 16)
+                       | ((u32)std::min(255, dg + tg) << 8)
+                       |  (u32)std::min(255, db + tb);
+                } else {
+                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF;
+                    const int db = dst & 0xFF;
+                    *d = 0xFF000000u
+                       | ((u32)div255(dr * tr) << 16)
+                       | ((u32)div255(dg * tg) << 8)
+                       |  (u32)div255(db * tb);
+                }
+            }
+        }
+    }
+
+    void drawSolidQuad(const GfxVertex* q, const f32* xf, GfxBlend blend,
                        int cx0, int cy0, int cx1, int cy1)
     {
+        if (xf) {
+            drawTransformedQuad(nullptr, q, xf, blend, cx0, cy0, cx1, cy1);
+            return;
+        }
         int x = (int)lroundf(m_ox + q[0].x * m_s);
         int y = (int)lroundf(m_oy + q[0].y * m_s);
         int w = (int)lroundf((q[1].x - q[0].x) * m_s);
@@ -400,9 +547,13 @@ private:
         fillSolid(q[0].color, blend, x0, y0, x1, y1);
     }
 
-    void drawQuad(BlitTexture* t, const GfxVertex* q, GfxBlend blend,
+    void drawQuad(BlitTexture* t, const GfxVertex* q, const f32* xf, GfxBlend blend,
                   int cx0, int cy0, int cx1, int cy1)
     {
+        if (xf) {
+            drawTransformedQuad(t, q, xf, blend, cx0, cy0, cx1, cy1);
+            return;
+        }
         int x = (int)lroundf(m_ox + q[0].x * m_s);
         int y = (int)lroundf(m_oy + q[0].y * m_s);
         int w = (int)lroundf((q[1].x - q[0].x) * m_s);
@@ -561,6 +712,8 @@ private:
     int m_w = OUT_W, m_h = OUT_H;
     float m_s = 1.0f, m_ox = 0.0f, m_oy = 0.0f;
     GfxBlend m_blend = GFX_BLEND_ALPHA;
+    f32 m_xf[6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    bool m_xfActive = false;
     bool m_defer = false;
     bool m_clip = false;
     int m_cx = 0, m_cy = 0, m_cw = 0, m_ch = 0;
