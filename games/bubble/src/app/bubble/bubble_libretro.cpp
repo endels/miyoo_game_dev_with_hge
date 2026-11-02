@@ -12,7 +12,7 @@
 
 #include "platform/plat_libretro.h"
 #include "gfx/gfx_blit.h"
-#include "app/bubble/audio.h"
+#include "hge_audio.h"
 
 static retro_video_refresh_t        video_cb;
 static retro_audio_sample_t         audio_cb;

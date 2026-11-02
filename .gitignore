@@ -1,9 +1,12 @@
 # Build outputs
 /build-miyoo/
 /build-libretro/
+/build-libretro-x86/
 /build-native/
+/build-win-mingw/
 /CMakeFiles/
 /CMakeCache.txt
+CMakeUserPresets.json
 *.o
 *.d
 *.a

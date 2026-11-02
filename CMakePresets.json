@@ -1,0 +1,76 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "linux-native",
+      "displayName": "Linux x86-64 (standalone, GL)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HGE_PLATFORM": "desktop",
+        "HGE_GFX": "gl",
+        "HGE_HOST": "standalone"
+      }
+    },
+    {
+      "name": "miyoo-cross",
+      "displayName": "Miyoo Mini+ (standalone, SDL_Renderer)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-miyoo",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/miyoo.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HGE_PLATFORM": "miyoo",
+        "HGE_GFX": "sdl",
+        "HGE_HOST": "standalone"
+      }
+    },
+    {
+      "name": "libretro-arm",
+      "displayName": "Miyoo Mini+ (libretro core, CPU blitter)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-libretro",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/miyoo.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HGE_PLATFORM": "miyoo",
+        "HGE_GFX": "blit",
+        "HGE_HOST": "libretro"
+      }
+    },
+    {
+      "name": "libretro-x86",
+      "displayName": "Linux x86-64 (libretro core, CPU blitter)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-libretro-x86",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HGE_PLATFORM": "desktop",
+        "HGE_GFX": "blit",
+        "HGE_HOST": "libretro"
+      }
+    },
+    {
+      "name": "windows-mingw",
+      "displayName": "Windows x86-64 (MinGW-w64, standalone, GL)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-win-mingw",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "HGE_PLATFORM": "desktop",
+        "HGE_GFX": "gl",
+        "HGE_HOST": "standalone"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux-native", "configurePreset": "linux-native" },
+    { "name": "miyoo-cross", "configurePreset": "miyoo-cross" },
+    { "name": "libretro-arm", "configurePreset": "libretro-arm" },
+    { "name": "libretro-x86", "configurePreset": "libretro-x86" },
+    { "name": "windows-mingw", "configurePreset": "windows-mingw" }
+  ]
+}

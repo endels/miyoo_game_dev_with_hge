@@ -17,10 +17,10 @@ cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --parallel
 
 # 自检（不需要人看画面，校验像素后返回 0/1）
-build\bin\Release\m1_demo.exe --selftest
+build\Release\m1_demo.exe --selftest
 
 # 正常跑 120 帧后退出；不带参数则 ESC 退出
-build\bin\Release\m1_demo.exe --frames 120
+build\Release\m1_demo.exe --frames 120
 ```
 
 SDL2 源码查找顺序：
@@ -61,16 +61,21 @@ SDL2 源码查找顺序：
 ## 3. 目录结构
 
 ```
-include/hge_types.h        固定宽度类型，替代 <windows.h> 的 DWORD/WORD/BOOL/HWND
-src/platform/plat.h        平台接口（窗口/事件/时间/输入/换缓冲），唯一碰 OS 的地方
-src/platform/plat_sdl2.cpp SDL2 实现，Win + Linux + kmsdrm 共用
-src/gfx/gl_api.h           零依赖 GL 载入层（不 include 任何 GL 头文件）
-src/gfx/gl_api.cpp         通过 SDL_GL_GetProcAddress 解析全部入口
-src/gfx/igfx.h             渲染器接口（对齐 HGE 的 10 个 Gfx_* + 7 个 Texture_*）
-src/gfx/gfx_gl.cpp         GLES2 / GL2.1 实现
-src/app/m1_demo.cpp        M1 演示 + 自检
+engine/include/hge/        引擎公共头（hge_types / hge_gfx / hge_audio / hge_resource）
+engine/src/platform/       平台接口与 SDL2 实现（唯一碰 OS 的地方）
+engine/src/gfx/            IGfx 接口、GL 载入层、gfx_gl / gfx_sdl / gfx_blit
+engine/src/core/           后端工厂（hge::CreateGfx）
+engine/src/audio/          混音器
+engine/src/resource/       pak 加载
+games/bubble/              泡泡龙业务层（逻辑 / 渲染 / AI / 入口 / libretro core）
+examples/m1_demo.cpp       M1 演示 + 自检
+cmake/toolchains/          Miyoo / MinGW 交叉工具链
+CMakePresets.json          linux-native / miyoo-cross / libretro-* / windows-mingw
 NOTICE / LICENSE-HGE.txt   zlib 授权要求的"修改版声明"与原始许可
 ```
+
+构建：`cmake --preset <name> && cmake --build --preset <name>`；
+`Makefile.miyoo` / `Makefile.libretro` 现在是调用对应 preset 的薄包装。
 
 ## 4. 已经固化下来的三条移植红线
 
@@ -144,12 +149,12 @@ SDL_VIDEODRIVER=kmsdrm ./m1_demo
 ## 运行
 
 ```powershell
-build\bin\Release\bubble_level1.exe                  # 玩：鼠标瞄准，左键/空格发射，R 重开，ESC 退出
-build\bin\Release\bubble_level1.exe --selftest       # 无窗口自检
-build\bin\Release\bubble_level1.exe --warmup 40 --shot a.ppm   # 预演40发后截图
+build\Release\bubble_level1.exe                  # 玩：鼠标瞄准，左键/空格发射，R 重开，ESC 退出
+build\Release\bubble_level1.exe --selftest       # 无窗口自检
+build\Release\bubble_level1.exe --warmup 40 --shot a.ppm   # 预演40发后截图
 ```
 
-`game.pak` 由 CMake POST_BUILD 自动拷到 exe 旁边。
+`game.pak` / `audio.pak` 由 CMake POST_BUILD 嵌入 exe（桌面构建）；dev 时也可放在 exe 旁边。
 
 ## 规则
 

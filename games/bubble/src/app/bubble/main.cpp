@@ -5,15 +5,10 @@
 //   bubble_level1 --shot a.ppm render one frame to a PPM and exit
 
 #include "platform/plat.h"
-#include "gfx/igfx.h"
-#if defined(HGE_LIBRETRO)
-#include "gfx/gfx_blit.h"
-#elif defined(HGE_PLATFORM_MIYOO)
-#include "gfx/gfx_sdl.h"
-#endif
-#include "app/bubble/assets.h"
+#include "hge_gfx.h"
+#include "hge_resource.h"
 #include "app/bubble/game.h"
-#include "app/bubble/audio.h"
+#include "hge_audio.h"
 
 #include <cmath>
 #include <cstdio>
@@ -593,13 +588,7 @@ int main(int argc, char** argv)
     }
 
     Ctx ctx;
-#if defined(HGE_LIBRETRO)
-    ctx.g = CreateGfxBlit();
-#elif defined(HGE_PLATFORM_MIYOO)
-    ctx.g = CreateGfxSDL();
-#else
-    ctx.g = CreateGfxGL();
-#endif
+    ctx.g = hge::CreateGfx();
     if (!ctx.g->Init(plat::Window(), plat::GLGetProc)) {
         plat::MessageBox("Bubble Versus", "Could not create the renderer.\n"
                                           "A GPU driver with OpenGL 2.1 / OpenGL ES 2.0 is required.");

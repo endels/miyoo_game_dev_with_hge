@@ -1,4 +1,4 @@
-#include "app/bubble/assets.h"
+#include "hge_resource.h"
 
 #include <cstdio>
 #include <cstring>

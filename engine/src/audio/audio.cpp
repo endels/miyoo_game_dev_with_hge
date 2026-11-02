@@ -1,4 +1,4 @@
-#include "app/bubble/audio.h"
+#include "hge_audio.h"
 
 #include <SDL.h>
 #include <cstdio>
