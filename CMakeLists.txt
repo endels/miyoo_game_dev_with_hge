@@ -45,6 +45,9 @@ endif()
 if(NOT HGE_HOST MATCHES "^(standalone|libretro)$")
     message(FATAL_ERROR "HGE_HOST must be standalone or libretro")
 endif()
+if(HGE_HOST STREQUAL "libretro" AND NOT HGE_GFX STREQUAL "blit")
+    message(FATAL_ERROR "HGE_HOST=libretro currently requires HGE_GFX=blit")
+endif()
 
 set(HGE_PUBLIC_DEFS SDL_MAIN_HANDLED)
 if(HGE_PLATFORM STREQUAL "miyoo")
@@ -108,7 +111,8 @@ endif()
 # ---------------------------------------------------------------------------
 set(HGE_CORE_SRC
     engine/src/core/app.cpp
-    engine/src/core/gfx_factory.cpp)
+    engine/src/core/gfx_factory.cpp
+    engine/src/core/system.cpp)
 
 set(HGE_SERVICE_SRC
     engine/src/audio/audio.cpp
@@ -142,7 +146,8 @@ add_library(hge STATIC
 
 target_include_directories(hge PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge"
-    "${HGE_GENERATED_DIR}"
+    "${HGE_GENERATED_DIR}")
+target_include_directories(hge PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/src")
 target_compile_definitions(hge PUBLIC ${HGE_PUBLIC_DEFS})
 target_link_libraries(hge PUBLIC ${HGE_SDL_TARGET})
@@ -181,18 +186,19 @@ hge_set_warnings(hge)
 # ---------------------------------------------------------------------------
 # Bubble game
 # ---------------------------------------------------------------------------
-set(BUBBLE_SRC
-    games/bubble/src/app/bubble/main.cpp
+set(BUBBLE_COMMON_SRC
     games/bubble/src/app/bubble/battle.cpp
     games/bubble/src/app/bubble/bubble_app.cpp
     games/bubble/src/app/bubble/game.cpp
     games/bubble/src/app/bubble/render.cpp)
+set(BUBBLE_MAIN_SRC
+    games/bubble/src/app/bubble/main.cpp)
 
 if(HGE_HOST STREQUAL "standalone")
     if(WIN32)
-        add_executable(bubble_level1 WIN32 ${BUBBLE_SRC})
+        add_executable(bubble_level1 WIN32 ${BUBBLE_COMMON_SRC} ${BUBBLE_MAIN_SRC})
     else()
-        add_executable(bubble_level1 ${BUBBLE_SRC})
+        add_executable(bubble_level1 ${BUBBLE_COMMON_SRC} ${BUBBLE_MAIN_SRC})
     endif()
     target_include_directories(bubble_level1 PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/games/bubble/src")
     target_link_libraries(bubble_level1 PRIVATE hge)
@@ -223,10 +229,12 @@ if(HGE_HOST STREQUAL "standalone")
     endif()
 else()
     add_library(bubble_libretro MODULE
-        ${BUBBLE_SRC}
-        games/bubble/src/app/bubble/bubble_libretro.cpp)
+        ${BUBBLE_COMMON_SRC}
+        games/bubble/src/app/bubble/bubble_libretro.cpp
+        engine/src/host/libretro_core.cpp)
     target_include_directories(bubble_libretro PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/games/bubble/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/libretro")
     target_link_libraries(bubble_libretro PRIVATE hge)
     target_link_options(bubble_libretro PRIVATE ${HGE_ARM_LINK_OPTIONS})
@@ -239,8 +247,16 @@ endif()
 # ---------------------------------------------------------------------------
 if(HGE_HOST STREQUAL "standalone" AND HGE_GFX STREQUAL "gl")
     add_executable(m1_demo examples/m1_demo/m1_demo.cpp)
+    target_include_directories(m1_demo PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/engine/src")
     target_link_libraries(m1_demo PRIVATE hge)
     hge_set_warnings(m1_demo)
+endif()
+
+if(HGE_HOST STREQUAL "standalone")
+    add_executable(hello_game examples/hello_game/main.cpp)
+    target_link_libraries(hello_game PRIVATE hge)
+    target_link_options(hello_game PRIVATE ${HGE_ARM_LINK_OPTIONS})
+    hge_set_warnings(hello_game)
 endif()
 
 # ---------------------------------------------------------------------------

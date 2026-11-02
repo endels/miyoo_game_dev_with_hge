@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libpulse-dev \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev \
+            libxcursor-dev libxinerama-dev libxss-dev libxkbcommon-dev \
+            libwayland-dev libdecor-0-dev \
+            libdrm-dev libgbm-dev libudev-dev libdbus-1-dev libibus-1.0-dev
+
+      - name: Linux native (threads on)
+        run: |
+          cmake --preset linux-native
+          cmake --build --preset linux-native -j"$(nproc)"
+          ctest --test-dir build-native --output-on-failure
+
+      - name: Linux native (threads off)
+        run: |
+          cmake --preset linux-nothreads
+          cmake --build --preset linux-nothreads -j"$(nproc)"
+          ctest --test-dir build-native-nothreads --output-on-failure
+
+      - name: libretro x86 build
+        run: |
+          cmake --preset libretro-x86
+          cmake --build --preset libretro-x86 -j"$(nproc)"

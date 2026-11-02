@@ -7,6 +7,8 @@
 #include "gfx/gfx_blit.h"
 #elif defined(HGE_GFX_SDL)
 #include "gfx/gfx_sdl.h"
+#else
+#include "gfx/gfx_gl.h"
 #endif
 
 namespace hge {

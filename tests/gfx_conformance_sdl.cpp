@@ -2,7 +2,7 @@
 // offscreen target. This covers the Miyoo renderer path on the host.
 
 #include "gfx/gfx_sdl.h"
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
 
 #include <SDL.h>
 #include <cstdio>

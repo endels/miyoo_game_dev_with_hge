@@ -2,7 +2,7 @@
 // clear, opaque quad, scissor, texture upload, and alpha blending.
 
 #include "gfx/gfx_blit.h"
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
 
 #include <cstddef>
 #include <cstdio>

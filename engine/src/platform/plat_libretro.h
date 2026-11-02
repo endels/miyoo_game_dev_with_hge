@@ -1,9 +1,9 @@
 #ifndef BBL_PLAT_LIBRETRO_H
 #define BBL_PLAT_LIBRETRO_H
 
-// Platform layer used when the game is built as a libretro core. The frontend
-// owns video/audio/input; this layer just:
-//  * runs the existing bubble_game_main() on a coroutine so each retro_run()
+// Platform layer used when the engine runs as a libretro core. The frontend
+// owns video/audio/input; this layer:
+//  * runs the configured engine entry on a coroutine so each retro_run()
 //    can advance exactly one frame (SwapBuffers yields back to the frontend),
 //  * renders with SDL's software renderer into an ARGB8888 surface that the
 //    core hands to the frontend,
@@ -23,6 +23,10 @@ enum PlatRetroBtn {
     PB_L      = 1u << 10,
     PB_R      = 1u << 11
 };
+
+// Entry point supplied by the engine's generic libretro host.
+typedef int (*PlatLibretroEntry)(int argc, char** argv);
+void plat_libretro_set_entry(PlatLibretroEntry fn);
 
 // Runs the game until its first SwapBuffers (i.e. init + one frame).
 // Returns 1 while the game is still alive, 0 if it exited during init.

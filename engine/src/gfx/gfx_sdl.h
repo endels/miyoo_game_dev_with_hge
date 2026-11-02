@@ -1,7 +1,7 @@
 #ifndef GFX_SDL_H
 #define GFX_SDL_H
 
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
 
 // Software-friendly SDL2 renderer backend for the IGfx seam.
 // Uses only universally supported SDL_Renderer primitives

@@ -1,7 +1,7 @@
 #ifndef GFX_BLIT_H
 #define GFX_BLIT_H
 
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
 
 // Low-power CPU 2D rasterizer backend. Draws the same quads as gfx_sdl but
 // with integer math (and optional NEON) straight into an ARGB8888 buffer,

@@ -61,14 +61,16 @@ SDL2 源码查找顺序：
 ## 3. 目录结构
 
 ```
-engine/include/hge/        引擎公共头（hge_types / hge_gfx / hge_audio / hge_resource）
-engine/src/platform/       平台接口与 SDL2 实现（唯一碰 OS 的地方）
-engine/src/gfx/            IGfx 接口、GL 载入层、gfx_gl / gfx_sdl / gfx_blit
-engine/src/core/           后端工厂（hge::CreateGfx）
+engine/include/hge/        引擎公共头（types / gfx / audio / resource / system / app / libretro）
+engine/src/platform/       平台接口与 desktop / miyoo / libretro 后端
+engine/src/gfx/            IGfx 实现：gfx_gl / gfx_sdl / gfx_blit
+engine/src/core/           主循环、后端工厂、系统服务
 engine/src/audio/          混音器
 engine/src/resource/       pak 加载
-games/bubble/              泡泡龙业务层（逻辑 / 渲染 / AI / 入口 / libretro core）
-examples/m1_demo.cpp       M1 演示 + 自检
+engine/src/host/           libretro 通用宿主
+games/bubble/              泡泡龙业务层（逻辑 / 渲染 / AI / 入口 / 元数据）
+examples/m1_demo/          M1 演示 + 自检
+examples/hello_game/       公共 API 边界探针
 tests/                     主机侧一致性测试与 golden 数据
 docs/                      架构/测试/移植说明
 cmake/toolchains/          Miyoo / MinGW 交叉工具链
@@ -201,6 +203,7 @@ ctest --test-dir build-native --output-on-failure
 ```
 
 详见 `docs/TESTING.md`：分层测试、确定性渲染、replay 格式、golden 更新流程。
+架构/构建矩阵/移植见 `docs/ARCHITECTURE.md`、`docs/BUILD_MATRIX.md`、`docs/PORTING.md`。
 
 ## 已知待办
 

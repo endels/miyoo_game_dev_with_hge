@@ -6,7 +6,7 @@
 
 | 层级 | 命令 | 检查内容 |
 |---|---|---|
-| L0 编译矩阵 | `cmake --build --preset ...` | x86 / Miyoo / libretro 全目标编译链接 |
+| L0 编译矩阵 | `cmake --build --preset ...` | x86 / Miyoo / libretro 全目标编译链接；`hello_game` 只依赖公共头 |
 | L1 逻辑自检 | `bubble_level1 --selftest` | 网格/物理不变量，退出码 0/1 |
 | L2 确定性模拟 | `bubble_level1 --sim-only 5` | 固定 1/60 步长跑纯战斗模拟，输出状态 + 校验和 |
 | L3 确定性渲染 | `bubble_level1 --render-test --frames N --shot out.ppm` | 固定时间步长渲染，不依赖 wall clock |
@@ -80,6 +80,11 @@ cmake --preset linux-nothreads
 cmake --build --preset linux-nothreads -j
 ctest --test-dir build-native-nothreads --output-on-failure
 ```
+
+## 边界探针
+
+`examples/hello_game` 只 include `engine/include/hge`，不碰 `engine/src`。
+它能编译就说明引擎/游戏公共头边界没有泄漏；`linux-native` 里会一起构建。
 
 ## 不自动化的部分
 

@@ -1,7 +1,6 @@
-// libretro platform layer. Reuses the desktop game loop (bubble_game_main) by
-// running it on a ucontext coroutine: each retro_run() advances exactly one
-// frame, because plat::SwapBuffers() yields back to the frontend. Rendering is
-// SDL's software renderer into an ARGB8888 surface handed to the frontend.
+// libretro platform layer. Runs the generic engine entry on a ucontext
+// coroutine: each retro_run() advances exactly one frame, because
+// plat::SwapBuffers() yields back to the frontend.
 
 #include "platform/plat.h"
 #include "platform/plat_libretro.h"
@@ -13,8 +12,6 @@
 #include <cstring>
 #include <ctime>
 #include <ucontext.h>
-
-extern int bubble_game_main(int argc, char** argv);
 
 namespace {
 
@@ -29,6 +26,7 @@ ucontext_t g_ucMain, g_ucGame;
 char       g_stack[1024 * 1024];
 bool       g_started = false;
 bool       g_done    = false;
+PlatLibretroEntry g_entry = nullptr;
 
 unsigned g_held = 0;
 plat::Event g_queue[8];
@@ -53,7 +51,8 @@ void pushEvent(int type, int key)
 
 void gameEntry()
 {
-    bubble_game_main(0, nullptr);
+    if (g_entry)
+        g_entry(0, nullptr);
     g_done = true;
     setcontext(&g_ucMain);   // return to the last retro_load_game/retro_run
 }
@@ -61,6 +60,11 @@ void gameEntry()
 } // namespace
 
 // ---------------------------------------------------------------- stepping
+void plat_libretro_set_entry(PlatLibretroEntry fn)
+{
+    g_entry = fn;
+}
+
 int plat_libretro_begin()
 {
     getcontext(&g_ucGame);

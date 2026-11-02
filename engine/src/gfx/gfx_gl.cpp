@@ -10,8 +10,9 @@
 //  * All geometry goes through one dynamic VBO and one draw call per state
 //    change, replacing HGE's DrawPrimitiveUP-per-quad.
 
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
 #include "gfx/gl_api.h"
+#include "gfx/gfx_gl.h"
 
 #include <cmath>
 #include <cstdio>

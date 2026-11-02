@@ -138,11 +138,7 @@ int runGame(int argc, char** argv)
 
 } // namespace
 
-#ifdef HGE_LIBRETRO
-int bubble_game_main(int argc, char** argv)
-#else
 int main(int argc, char** argv)
-#endif
 {
     return runGame(argc, argv);
 }

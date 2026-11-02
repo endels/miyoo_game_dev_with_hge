@@ -13,7 +13,8 @@
 //   m1_demo --selftest      run headless-ish, verify pixels, exit 0/1
 
 #include "platform/plat.h"
-#include "gfx/igfx.h"
+#include "hge_gfx.h"
+#include "gfx/gfx_gl.h"
 #include "hge_types.h"
 
 #include <cmath>

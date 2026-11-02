@@ -1,7 +1,7 @@
 #include "app/bubble/bubble_app.h"
 
 #include "hge_resource.h"
-#include "platform/plat.h"
+#include "hge_system.h"
 
 #include <cstdio>
 #include <cstring>
@@ -68,16 +68,16 @@ bool loadEmbedded(const std::string& selfPath,
 {
     std::string selfPaths[2];
     selfPaths[0] = selfPath;
-    selfPaths[1] = std::string(plat::BasePath()) + "bubble_level1";
+    selfPaths[1] = std::string(hge::BasePath()) + "bubble_level1";
 
     for (int sp = 0; sp < 2; ++sp) {
         const char* self = selfPaths[sp].empty() ? nullptr : selfPaths[sp].c_str();
         if (!self) continue;
-        const long long sz = plat::FileSize(self);
+        const long long sz = hge::FileSize(self);
         if (sz <= 64) continue;
 
         std::vector<u8> tail;
-        if (!plat::ReadFileRange(self, sz - 16, 16, tail) ||
+        if (!hge::ReadFileRange(self, sz - 16, 16, tail) ||
             memcmp(&tail[0], "HGEEMB01", 8) != 0) {
             continue;
         }
@@ -86,8 +86,8 @@ bool loadEmbedded(const std::string& selfPath,
         memcpy(&as, &tail[12], 4);
         const long long base = sz - 16 - (long long)gs - (long long)as;
         if (base > 0 &&
-            plat::ReadFileRange(self, base, gs, embGame) &&
-            plat::ReadFileRange(self, base + (long long)gs, as, embAudio))
+            hge::ReadFileRange(self, base, gs, embGame) &&
+            hge::ReadFileRange(self, base + (long long)gs, as, embAudio))
             return true;
     }
     return false;
@@ -100,12 +100,12 @@ bool loadPack(Pack& pack, bool haveEmbedded,
         return pack.LoadFromMemory(&embGame[0], embGame.size(), "<exe>");
 
     std::string cands[3];
-    cands[0] = std::string(plat::BasePath()) + "game.pak";
+    cands[0] = std::string(hge::BasePath()) + "game.pak";
     cands[1] = "game.pak";
     cands[2] = "assets/game.pak";
     for (int i = 0; i < 3; ++i) {
         std::vector<u8> bytes;
-        if (!plat::ReadFileAll(cands[i].c_str(), bytes)) continue;
+        if (!hge::ReadFileAll(cands[i].c_str(), bytes)) continue;
         if (pack.LoadFromMemory(&bytes[0], bytes.size(), cands[i].c_str()))
             return true;
         fprintf(stderr, "[bubble] %s: %s\n", cands[i].c_str(), pack.LastError());
@@ -132,9 +132,9 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
 
     Pack pack;
     const bool loaded = loadPack(pack, haveEmbedded, embGame);
-    fprintf(stderr, "[t] game.pak=%s %.3fs\n", loaded ? "ok" : "FAIL", plat::Time());
+    fprintf(stderr, "[t] game.pak=%s %.3fs\n", loaded ? "ok" : "FAIL", hge::Time());
     if (!loaded) {
-        plat::MessageBox("Bubble Versus",
+        hge::MessageBox("Bubble Versus",
                          "game.pak not found.\n\n"
                          "Keep bubble_level1.exe, game.pak and audio.pak in the same folder.");
         Shutdown();
@@ -143,11 +143,11 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
 
     std::string err;
     if (!LoadTextures(m_render, gfx, pack, &err)) {
-        plat::MessageBox("Bubble Versus", err.c_str());
+        hge::MessageBox("Bubble Versus", err.c_str());
         Shutdown();
         return false;
     }
-    fprintf(stderr, "[t] textures=%.3fs\n", plat::Time());
+    fprintf(stderr, "[t] textures=%.3fs\n", hge::Time());
 
     // ---------------------------------------------------------- audio
     m_audioPack.reset(new AudioPack());
@@ -155,18 +155,18 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
         m_audioOn = audio::Init();
     if (!m_audioOn) {
         std::string apath[3];
-        apath[0] = std::string(plat::BasePath()) + "audio.pak";
+        apath[0] = std::string(hge::BasePath()) + "audio.pak";
         apath[1] = "audio.pak";
         apath[2] = "assets/audio.pak";
         std::vector<u8> abytes;
         for (int i = 0; i < 3 && !m_audioOn; ++i) {
-            if (!plat::ReadFileAll(apath[i].c_str(), abytes)) continue;
+            if (!hge::ReadFileAll(apath[i].c_str(), abytes)) continue;
             if (!m_audioPack->Load(abytes)) continue;
             if (!audio::Init()) break;
             m_audioOn = true;
         }
     }
-    fprintf(stderr, "[t] audio_init=%.3fs (on=%d)\n", plat::Time(), (int)m_audioOn);
+    fprintf(stderr, "[t] audio_init=%.3fs (on=%d)\n", hge::Time(), (int)m_audioOn);
 
     if (m_audioOn) {
         m_cShoot = m_audioPack->Find("shoot");
