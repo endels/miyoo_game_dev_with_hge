@@ -24,6 +24,54 @@ const int FONT_COLS = 16;
 const int FONT_W = FONT_CW * FONT_COLS;
 const int FONT_H = FONT_CH * 6;
 
+// Cannon barrel is pre-rotated at load into one spritesheet. This avoids
+// per-frame render-target/texture updates and works identically on GL, the
+// Miyoo SDL software renderer and the libretro CPU blitter.
+const int kBarrelFrames = 107;
+const int kBarrelCols = 12;
+const int kBarrelRows = 9;
+const int kBarrelFrameSize = 52;
+const int kBarrelSheetW = kBarrelCols * kBarrelFrameSize;
+const int kBarrelSheetH = kBarrelRows * kBarrelFrameSize;
+
+IGfxTexture* buildBarrelSheet(IGfx* g, const Image* img)
+{
+    if (!g || !img || img->w <= 0 || img->h <= 0) return nullptr;
+
+    std::vector<u32> sheet((size_t)kBarrelSheetW * kBarrelSheetH, 0);
+    const float srcPivotX = img->w * 0.5f;
+    const float srcPivotY = (float)img->h;
+    const float dstPivotX = kBarrelFrameSize * 0.5f;
+    const float dstPivotY = (float)kBarrelFrameSize;
+
+    for (int f = 0; f < kBarrelFrames; ++f) {
+        const float a = -1.5707964f + 3.14159265f * (float)f /
+                                          (float)(kBarrelFrames - 1);
+        const float ca = cosf(a), sa = sinf(a);
+        const int ox = (f % kBarrelCols) * kBarrelFrameSize;
+        const int oy = (f / kBarrelCols) * kBarrelFrameSize;
+
+        for (int dy = 0; dy < kBarrelFrameSize; ++dy) {
+            const float vy = (float)dy + 0.5f - dstPivotY;
+            u32* row = &sheet[(size_t)(oy + dy) * kBarrelSheetW + ox];
+            for (int dx = 0; dx < kBarrelFrameSize; ++dx) {
+                const float vx = (float)dx + 0.5f - dstPivotX;
+                const float sxf = ca * vx + sa * vy + srcPivotX;
+                const float syf = -sa * vx + ca * vy + srcPivotY;
+                if (sxf < 0.0f || syf < 0.0f ||
+                    sxf >= (float)img->w || syf >= (float)img->h) {
+                    continue;
+                }
+                const int ix = (int)sxf;
+                const int iy = (int)syf;
+                row[dx] = img->px[(size_t)iy * img->w + ix];
+            }
+        }
+    }
+
+    return g->CreateTexture(kBarrelSheetW, kBarrelSheetH, &sheet[0], kBarrelSheetW * 4);
+}
+
 IGfxTexture* upload(IGfx* g, const Image* img)
 {
     if (!img) return nullptr;
@@ -180,11 +228,25 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
         }
     }
 
-    // cannon
+    // cannon (pre-rotated frame sheet)
     const float sx = game.ShooterX();
-    g->SetTransform(sx, kShooterY, 0, 0, game.AimAngle() + 1.5707964f, 1, 1);
-    quad(g, c.cannonBarrel, sx - 10, kShooterY - 46, 20, 46, 0xFFFFFFFF);
-    g->SetTransform(0, 0, 0, 0, 0, 1, 1);
+    {
+        const float rot = game.AimAngle() + 1.5707964f;
+        int fi = (int)lroundf((rot + 1.5707964f) / 3.14159265f *
+                              (float)(kBarrelFrames - 1));
+        if (fi < 0) fi = 0;
+        else if (fi >= kBarrelFrames) fi = kBarrelFrames - 1;
+        const int fx = (fi % kBarrelCols) * kBarrelFrameSize;
+        const int fy = (fi / kBarrelCols) * kBarrelFrameSize;
+        const float u0 = (float)fx / (float)kBarrelSheetW;
+        const float v0 = (float)fy / (float)kBarrelSheetH;
+        const float u1 = (float)(fx + kBarrelFrameSize) / (float)kBarrelSheetW;
+        const float v1 = (float)(fy + kBarrelFrameSize) / (float)kBarrelSheetH;
+        quadUV(g, c.cannonBarrelFrames,
+               sx - kBarrelFrameSize * 0.5f, kShooterY - kBarrelFrameSize,
+               (float)kBarrelFrameSize, (float)kBarrelFrameSize,
+               u0, v0, u1, v1, 0xFFFFFFFF);
+    }
 
     quad(g, c.dot, sx - 46, kShooterY - 46, 92, 92, 0x18A0C0FF);
     quad(g, c.cannonBase, sx - 32, kShooterY - 32, 64, 64, 0xFFFFFFFF);
@@ -297,7 +359,7 @@ bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err)
         }
     }
     if ((img = pack.Find("cannon_base")) != nullptr) c.cannonBase = upload(c.g, img);
-    if ((img = pack.Find("cannon_barrel")) != nullptr) c.cannonBarrel = upload(c.g, img);
+    c.cannonBarrelFrames = buildBarrelSheet(c.g, pack.Find("cannon_barrel"));
     if ((img = pack.Find("dot")) != nullptr) c.dot = upload(c.g, img);
     if ((img = pack.Find("ring")) != nullptr) c.ring = upload(c.g, img);
     if ((img = pack.Find("wave")) != nullptr) c.wave = upload(c.g, img);
@@ -318,7 +380,7 @@ bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err)
         snprintf(n, sizeof(n), "bub%d_look", v);
         if ((img = pack.Find(n)) != nullptr) c.dinoLook[v] = upload(c.g, img);
     }
-    if (!c.bg || !c.cannonBase || !c.cannonBarrel || !c.dot || !c.ring || !c.font) {
+    if (!c.bg || !c.cannonBase || !c.cannonBarrelFrames || !c.dot || !c.ring || !c.font) {
         if (err) *err = "game.pak is corrupt or from an older build.";
         return false;
     }
@@ -335,8 +397,8 @@ void FreeTextures(RenderCtx& c)
             if (c.bubblesBig[i])   g->ReleaseTexture(c.bubblesBig[i]);
             if (c.bubblesAnim[i])  g->ReleaseTexture(c.bubblesAnim[i]);
         }
-        if (c.cannonBase)   g->ReleaseTexture(c.cannonBase);
-        if (c.cannonBarrel) g->ReleaseTexture(c.cannonBarrel);
+        if (c.cannonBase)         g->ReleaseTexture(c.cannonBase);
+        if (c.cannonBarrelFrames) g->ReleaseTexture(c.cannonBarrelFrames);
         if (c.dot)          g->ReleaseTexture(c.dot);
         if (c.ring)         g->ReleaseTexture(c.ring);
         if (c.wave)         g->ReleaseTexture(c.wave);
