@@ -3,7 +3,19 @@
 把 HGE 1.81 的 **Direct3D 8 + Win32** 后端换成 **SDL2 + OpenGL ES 2.0**，
 一套代码出 Windows / Linux / 嵌入式 Linux（kmsdrm）三个目标。
 
-当前进度：**M1 完成** —— 可编译骨架，渲染链路已验证。
+当前进度：**P2 完成** —— 引擎/游戏分层、公共 API、通用 libretro 宿主已落地，进入迭代期。
+
+## 文档导航
+
+| 内容 | 位置 |
+|---|---|
+| 环境准备（CMake / 工具链 / SDL2 依赖） | `docs/BUILD_MATRIX.md` |
+| 架构与引擎/游戏边界 | `docs/ARCHITECTURE.md` |
+| 测试、确定性渲染、replay | `docs/TESTING.md` |
+| 新平台/后端/宿主移植 | `docs/PORTING.md` |
+| Miyoo 部署包与 scp 步骤 | `package/DEPLOY.md` |
+| 热点/SSH 工具目录 | `bench_tools/README.md` |
+| 热点原理、排障、回滚 | `bench_tools/miyoo_hotspot_default.md` |
 
 ---
 
