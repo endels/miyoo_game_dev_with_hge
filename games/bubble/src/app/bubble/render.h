@@ -20,6 +20,7 @@ struct RenderCtx {
     IGfxTexture* bubblesAnim[kColors] = {0};
     IGfxTexture* cannonBase = nullptr;
     IGfxTexture* cannonBarrelFrames = nullptr;
+    float barrelSrcW = 0.0f, barrelSrcH = 0.0f;
     IGfxTexture* dot = nullptr;
     IGfxTexture* ring = nullptr;
     IGfxTexture* wave = nullptr;

@@ -24,15 +24,35 @@ const int FONT_COLS = 16;
 const int FONT_W = FONT_CW * FONT_COLS;
 const int FONT_H = FONT_CH * 6;
 
-// Cannon barrel is pre-rotated at load into one spritesheet. This avoids
-// per-frame render-target/texture updates and works identically on GL, the
-// Miyoo SDL software renderer and the libretro CPU blitter.
-const int kBarrelFrames = 107;
+// Cannon barrel is pre-rotated at load into one spritesheet. Each cell stores
+// only the rotated bounding box (not a box around the pivot), so no part is
+// clipped when the barrel points left/right.
+const int kBarrelFrames = 96;
 const int kBarrelCols = 12;
-const int kBarrelRows = 9;
-const int kBarrelFrameSize = 52;
-const int kBarrelSheetW = kBarrelCols * kBarrelFrameSize;
-const int kBarrelSheetH = kBarrelRows * kBarrelFrameSize;
+const int kBarrelRows = 8;
+const int kBarrelCell = 53;
+const int kBarrelSheetW = kBarrelCols * kBarrelCell;
+const int kBarrelSheetH = kBarrelRows * kBarrelCell;
+
+// Rotated bounds relative to the bottom-centre pivot.
+void barrelBounds(float a, float w, float h,
+                  float* bx0, float* by0, float* bx1, float* by1)
+{
+    const float hw = w * 0.5f;
+    const float xs[4] = { -hw, hw, -hw, hw };
+    const float ys[4] = { -h, -h, 0.0f, 0.0f };
+    const float ca = cosf(a), sa = sinf(a);
+    *bx0 = *by0 = 1.0e30f;
+    *bx1 = *by1 = -1.0e30f;
+    for (int i = 0; i < 4; ++i) {
+        const float x = ca * xs[i] - sa * ys[i];
+        const float y = sa * xs[i] + ca * ys[i];
+        if (x < *bx0) *bx0 = x;
+        if (x > *bx1) *bx1 = x;
+        if (y < *by0) *by0 = y;
+        if (y > *by1) *by1 = y;
+    }
+}
 
 IGfxTexture* buildBarrelSheet(IGfx* g, const Image* img)
 {
@@ -41,23 +61,23 @@ IGfxTexture* buildBarrelSheet(IGfx* g, const Image* img)
     std::vector<u32> sheet((size_t)kBarrelSheetW * kBarrelSheetH, 0);
     const float srcPivotX = img->w * 0.5f;
     const float srcPivotY = (float)img->h;
-    const float dstPivotX = kBarrelFrameSize * 0.5f;
-    const float dstPivotY = (float)kBarrelFrameSize;
 
     for (int f = 0; f < kBarrelFrames; ++f) {
         const float a = -1.5707964f + 3.14159265f * (float)f /
                                           (float)(kBarrelFrames - 1);
         const float ca = cosf(a), sa = sinf(a);
-        const int ox = (f % kBarrelCols) * kBarrelFrameSize;
-        const int oy = (f / kBarrelCols) * kBarrelFrameSize;
+        float bx0, by0, bx1, by1;
+        barrelBounds(a, (float)img->w, (float)img->h, &bx0, &by0, &bx1, &by1);
+        const int ox = (f % kBarrelCols) * kBarrelCell;
+        const int oy = (f / kBarrelCols) * kBarrelCell;
 
-        for (int dy = 0; dy < kBarrelFrameSize; ++dy) {
-            const float vy = (float)dy + 0.5f - dstPivotY;
+        for (int dy = 0; dy < kBarrelCell; ++dy) {
+            const float py = by0 + (float)dy + 0.5f;
             u32* row = &sheet[(size_t)(oy + dy) * kBarrelSheetW + ox];
-            for (int dx = 0; dx < kBarrelFrameSize; ++dx) {
-                const float vx = (float)dx + 0.5f - dstPivotX;
-                const float sxf = ca * vx + sa * vy + srcPivotX;
-                const float syf = -sa * vx + ca * vy + srcPivotY;
+            for (int dx = 0; dx < kBarrelCell; ++dx) {
+                const float px = bx0 + (float)dx + 0.5f;
+                const float sxf = ca * px + sa * py + srcPivotX;
+                const float syf = -sa * px + ca * py + srcPivotY;
                 if (sxf < 0.0f || syf < 0.0f ||
                     sxf >= (float)img->w || syf >= (float)img->h) {
                     continue;
@@ -236,15 +256,17 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
                               (float)(kBarrelFrames - 1));
         if (fi < 0) fi = 0;
         else if (fi >= kBarrelFrames) fi = kBarrelFrames - 1;
-        const int fx = (fi % kBarrelCols) * kBarrelFrameSize;
-        const int fy = (fi / kBarrelCols) * kBarrelFrameSize;
+        const int fx = (fi % kBarrelCols) * kBarrelCell;
+        const int fy = (fi / kBarrelCols) * kBarrelCell;
         const float u0 = (float)fx / (float)kBarrelSheetW;
         const float v0 = (float)fy / (float)kBarrelSheetH;
-        const float u1 = (float)(fx + kBarrelFrameSize) / (float)kBarrelSheetW;
-        const float v1 = (float)(fy + kBarrelFrameSize) / (float)kBarrelSheetH;
+        const float u1 = (float)(fx + kBarrelCell) / (float)kBarrelSheetW;
+        const float v1 = (float)(fy + kBarrelCell) / (float)kBarrelSheetH;
+        float bx0, by0, bx1, by1;
+        barrelBounds(rot, c.barrelSrcW, c.barrelSrcH, &bx0, &by0, &bx1, &by1);
         quadUV(g, c.cannonBarrelFrames,
-               sx - kBarrelFrameSize * 0.5f, kShooterY - kBarrelFrameSize,
-               (float)kBarrelFrameSize, (float)kBarrelFrameSize,
+               sx + bx0, kShooterY + by0,
+               (float)kBarrelCell, (float)kBarrelCell,
                u0, v0, u1, v1, 0xFFFFFFFF);
     }
 
@@ -359,7 +381,11 @@ bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err)
         }
     }
     if ((img = pack.Find("cannon_base")) != nullptr) c.cannonBase = upload(c.g, img);
-    c.cannonBarrelFrames = buildBarrelSheet(c.g, pack.Find("cannon_barrel"));
+    if ((img = pack.Find("cannon_barrel")) != nullptr) {
+        c.barrelSrcW = (float)img->w;
+        c.barrelSrcH = (float)img->h;
+        c.cannonBarrelFrames = buildBarrelSheet(c.g, img);
+    }
     if ((img = pack.Find("dot")) != nullptr) c.dot = upload(c.g, img);
     if ((img = pack.Find("ring")) != nullptr) c.ring = upload(c.g, img);
     if ((img = pack.Find("wave")) != nullptr) c.wave = upload(c.g, img);
