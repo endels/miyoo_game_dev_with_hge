@@ -20,3 +20,10 @@ CFG
 cd /mnt/SDCARD/RetroArch/
 HOME=/mnt/SDCARD/RetroArch/ ./retroarch -v --appendconfig "$progdir/ra_append.cfg" -L "$progdir/bubble_libretro.so" > "$progdir/ra.log" 2>&1
 sync
+
+# Ask Onion's runtime to restore the debug hotspot after the game exits.
+sysdir=/mnt/SDCARD/.tmp_update
+if [ -f "$sysdir/config/.bench_hotspot" ]; then
+    touch "$sysdir/config/.hotspotState"
+    touch /tmp/network_changed
+fi

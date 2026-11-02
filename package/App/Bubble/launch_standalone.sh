@@ -23,5 +23,12 @@ cd "$progdir"
 
 sync
 
+# Ask Onion's runtime to restore the debug hotspot after the game exits.
+sysdir=/mnt/SDCARD/.tmp_update
+if [ -f "$sysdir/config/.bench_hotspot" ]; then
+    touch "$sysdir/config/.hotspotState"
+    touch /tmp/network_changed
+fi
+
 # Re-init mi_disp so runtime's relaunched MainUI can draw again.
 /mnt/SDCARD/.tmp_update/bin/disp_init >/dev/null 2>&1 &
