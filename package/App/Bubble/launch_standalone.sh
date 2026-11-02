@@ -23,11 +23,16 @@ cd "$progdir"
 
 sync
 
-# Ask Onion's runtime to restore the debug hotspot after the game exits.
+# Restore the debug hotspot after the game exits. Onion can leave hostapd/WiFi
+# down in this path, so re-run the same boot helper that brings the AP up.
 sysdir=/mnt/SDCARD/.tmp_update
 if [ -f "$sysdir/config/.bench_hotspot" ]; then
-    touch "$sysdir/config/.hotspotState"
-    touch /tmp/network_changed
+    if [ -x "$sysdir/script/bench_hotspot_boot.sh" ]; then
+        ( sleep 2; "$sysdir/script/bench_hotspot_boot.sh" ) >/dev/null 2>&1 &
+    else
+        touch "$sysdir/config/.hotspotState"
+        touch /tmp/network_changed
+    fi
 fi
 
 # Re-init mi_disp so runtime's relaunched MainUI can draw again.
