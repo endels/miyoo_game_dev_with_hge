@@ -77,6 +77,9 @@ void  SetTitle(const char* utf8);
 double Time();               // seconds since Init()
 void   SleepMs(int ms);
 
+// True when the backend has no vsync and the main loop should cap to 60 fps.
+bool   ManualFrameCap();
+
 // ---- input --------------------------------------------------------------
 bool  Poll(Event& ev);       // false when the queue is empty for this frame
 bool  KeyDown(int hgeKey);   // HGEK_* -> held state

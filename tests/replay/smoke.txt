@@ -1,0 +1,8 @@
+# Deterministic replay smoke script: frame, action [args]
+# Run with: bubble_level1 --render-test --frames 46 --replay this.txt
+
+0  aim 300 200
+5  fire
+20 aim 500 150
+25 fire
+45 quit

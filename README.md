@@ -69,6 +69,8 @@ engine/src/audio/          混音器
 engine/src/resource/       pak 加载
 games/bubble/              泡泡龙业务层（逻辑 / 渲染 / AI / 入口 / libretro core）
 examples/m1_demo.cpp       M1 演示 + 自检
+tests/                     主机侧一致性测试与 golden 数据
+docs/                      架构/测试/移植说明
 cmake/toolchains/          Miyoo / MinGW 交叉工具链
 CMakePresets.json          linux-native / miyoo-cross / libretro-* / windows-mingw
 NOTICE / LICENSE-HGE.txt   zlib 授权要求的"修改版声明"与原始许可
@@ -187,6 +189,18 @@ build\Release\bubble_level1.exe --warmup 40 --shot a.ppm   # 预演40发后截�
 - `--warmup` 预演可以复现中局局面，用来肉眼检查吸附位置
 
 未覆盖：真人难度曲线。预演 AI 很笨（会往同一列堆），20~35 发就会触线，属正常。
+
+## 测试
+
+```bash
+ctest --test-dir build-native --output-on-failure
+./build-native/bubble_level1 --selftest
+./build-native/bubble_level1 --sim-only 5
+./build-native/bubble_level1 --render-test --frames 60 --shot /tmp/a.ppm
+./build-native/bubble_level1 --render-test --frames 46 --replay tests/replay/smoke.txt
+```
+
+详见 `docs/TESTING.md`：分层测试、确定性渲染、replay 格式、golden 更新流程。
 
 ## 已知待办
 

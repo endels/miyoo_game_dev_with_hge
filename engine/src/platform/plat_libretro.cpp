@@ -226,6 +226,8 @@ double Time()
 
 void SleepMs(int /*ms*/) {}   // pacing is owned by the frontend
 
+bool ManualFrameCap() { return false; }
+
 bool Poll(Event& ev)
 {
     if (g_qHead == g_qTail) return false;

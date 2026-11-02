@@ -24,6 +24,17 @@ set(HGE_GFX "gl" CACHE STRING "Graphics backend: gl|sdl|blit")
 set_property(CACHE HGE_GFX PROPERTY STRINGS gl sdl blit)
 set(HGE_HOST "standalone" CACHE STRING "Host form: standalone|libretro")
 set_property(CACHE HGE_HOST PROPERTY STRINGS standalone libretro)
+option(HGE_GLES "Build the desktop backend against OpenGL ES 2.0 (kmsdrm / embedded)" OFF)
+option(HGE_FEATURE_AUDIO "Build the audio mixer" ON)
+option(HGE_FEATURE_THREADS "Allow optional threads (blitter worker)" ON)
+option(HGE_FEATURE_FILESYSTEM "Allow filesystem-backed resources" ON)
+option(HGE_BUILD_TESTS "Build host-side test executables" ON)
+
+set(HGE_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge/hge_config.h.in"
+    "${HGE_GENERATED_DIR}/hge/hge_config.h"
+    @ONLY)
 
 if(NOT HGE_PLATFORM MATCHES "^(desktop|miyoo)$")
     message(FATAL_ERROR "HGE_PLATFORM must be desktop or miyoo")
@@ -48,6 +59,9 @@ elseif(HGE_GFX STREQUAL "sdl")
     list(APPEND HGE_PUBLIC_DEFS HGE_GFX_SDL=1)
 else()
     list(APPEND HGE_PUBLIC_DEFS HGE_GFX_BLIT=1)
+endif()
+if(HGE_GLES)
+    list(APPEND HGE_PUBLIC_DEFS HGE_GLES=1)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -93,6 +107,7 @@ endif()
 # Engine static library
 # ---------------------------------------------------------------------------
 set(HGE_CORE_SRC
+    engine/src/core/app.cpp
     engine/src/core/gfx_factory.cpp)
 
 set(HGE_SERVICE_SRC
@@ -109,8 +124,14 @@ endif()
 
 if(HGE_HOST STREQUAL "libretro")
     set(HGE_PLATFORM_SRC engine/src/platform/plat_libretro.cpp)
+elseif(HGE_PLATFORM STREQUAL "miyoo")
+    set(HGE_PLATFORM_SRC
+        engine/src/platform/plat_sdl2.cpp
+        engine/src/platform/plat_sdl2_miyoo.cpp)
 else()
-    set(HGE_PLATFORM_SRC engine/src/platform/plat_sdl2.cpp)
+    set(HGE_PLATFORM_SRC
+        engine/src/platform/plat_sdl2.cpp
+        engine/src/platform/plat_sdl2_desktop.cpp)
 endif()
 
 add_library(hge STATIC
@@ -121,6 +142,7 @@ add_library(hge STATIC
 
 target_include_directories(hge PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge"
+    "${HGE_GENERATED_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/engine/src")
 target_compile_definitions(hge PUBLIC ${HGE_PUBLIC_DEFS})
 target_link_libraries(hge PUBLIC ${HGE_SDL_TARGET})
@@ -161,7 +183,10 @@ hge_set_warnings(hge)
 # ---------------------------------------------------------------------------
 set(BUBBLE_SRC
     games/bubble/src/app/bubble/main.cpp
-    games/bubble/src/app/bubble/game.cpp)
+    games/bubble/src/app/bubble/battle.cpp
+    games/bubble/src/app/bubble/bubble_app.cpp
+    games/bubble/src/app/bubble/game.cpp
+    games/bubble/src/app/bubble/render.cpp)
 
 if(HGE_HOST STREQUAL "standalone")
     if(WIN32)
@@ -216,4 +241,29 @@ if(HGE_HOST STREQUAL "standalone" AND HGE_GFX STREQUAL "gl")
     add_executable(m1_demo examples/m1_demo/m1_demo.cpp)
     target_link_libraries(m1_demo PRIVATE hge)
     hge_set_warnings(m1_demo)
+endif()
+
+# ---------------------------------------------------------------------------
+# Host-side tests (not built when cross-compiling)
+# ---------------------------------------------------------------------------
+if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    enable_testing()
+
+    add_executable(gfx_conformance_blit
+        tests/gfx_conformance_blit.cpp
+        tests/plat_stub.cpp
+        engine/src/gfx/gfx_blit.cpp)
+    target_include_directories(gfx_conformance_blit PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge")
+    target_link_libraries(gfx_conformance_blit PRIVATE Threads::Threads)
+    hge_set_warnings(gfx_conformance_blit)
+    add_test(NAME gfx_conformance_blit COMMAND gfx_conformance_blit)
+
+    if(UNIX AND TARGET bubble_level1)
+        add_test(NAME bubble_sim_golden
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_host_tests.sh"
+                    "$<TARGET_FILE:bubble_level1>"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/sim_5.txt")
+    endif()
 endif()
