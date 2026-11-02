@@ -223,3 +223,9 @@ ssh -o MACs=hmac-sha1 onion@192.168.100.100
 - `./miyoo_connect.sh --check` 失败：热点未开、PC 网卡、AP 名/IP 不匹配。
 - `./miyoo_bench_hotspot.sh status`：`bench marker=no` 未启用；`runtime hook=0` 未安装；`wifi setting=0` 先在 Onion 里开 WiFi。
 - 设备端 `runtime.sh.bench.bak` 供 `uninstall` 恢复。
+
+### 10.5 退出游戏后恢复热点
+`package/App/Bubble/launch.sh` 和 `launch_standalone.sh` 在游戏退出后会后台重跑
+`/mnt/SDCARD/.tmp_update/script/bench_hotspot_boot.sh`，重新拉起 hostapd + dnsmasq。
+前提：已执行 `./miyoo_bench_hotspot.sh install`，且 `.tmp_update/config/.bench_hotspot`
+存在。日志见设备 `/mnt/SDCARD/.tmp_update/bench_hotspot_boot.log`。

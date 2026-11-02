@@ -205,6 +205,13 @@ ctest --test-dir build-native --output-on-failure
 详见 `docs/TESTING.md`：分层测试、确定性渲染、replay 格式、golden 更新流程。
 架构/构建矩阵/移植见 `docs/ARCHITECTURE.md`、`docs/BUILD_MATRIX.md`、`docs/PORTING.md`。
 
+## Miyoo 部署与真机调试
+
+- 部署包结构与完整步骤：`package/DEPLOY.md`
+- 热点/SSH 工具目录：`bench_tools/README.md`
+  （`miyoo_connect.sh`、`miyoo_bench_hotspot.sh`、设备端 `bench_hotspot_*.sh`）
+- 退出游戏后会自动重跑 `bench_hotspot_boot.sh` 恢复热点，不需要重启机器。
+
 ## 已知待办
 
 - 音效（FSM 示例工程自带 `Chest1/Magic1/Chime1` 等 SE，可用）
