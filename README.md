@@ -9,6 +9,9 @@
 
 ## 1. 快速开始（Windows）
 
+> Linux/WSL（Miyoo 交叉编译推荐）：CMake/工具链/SDL2 依赖的安装见
+> `docs/BUILD_MATRIX.md` 的“环境准备”。
+
 ```powershell
 # 配置（SDL2 源码由 CMake 自动在下面两个位置查找）
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64

@@ -9,7 +9,18 @@
 
 MainUI 菜单实际走 `launch.sh`；`launch_standalone.sh` 只用于直连调试。
 
-## 1. 构建
+## 1. 环境准备与构建
+
+前置环境（CMake、编译依赖、Miyoo 工具链、SDL2 源码）见
+[`docs/BUILD_MATRIX.md`](../docs/BUILD_MATRIX.md) 的“环境准备”一节。
+最小安装（Ubuntu/WSL）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake pkg-config python3 git sshpass
+```
+
+然后：
 
 ```bash
 cd ~/miyoo_dev/hge-sdl
