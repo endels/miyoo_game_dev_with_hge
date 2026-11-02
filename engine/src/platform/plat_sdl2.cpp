@@ -103,6 +103,7 @@ bool Init(int width, int height, const char* title, bool vsync, bool resizable)
     if (!detail::backendInit(width, height, title, vsync, resizable))
         return false;
 
+    detail::backendUpdateSize();
     detail::buildKeyMap();
     detail::g_freq = SDL_GetPerformanceFrequency();
     detail::g_t0   = SDL_GetPerformanceCounter();

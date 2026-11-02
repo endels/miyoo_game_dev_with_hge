@@ -3,6 +3,7 @@
 /build-libretro/
 /build-libretro-x86/
 /build-native/
+/build-native-nothreads/
 /build-win-mingw/
 /CMakeFiles/
 /CMakeCache.txt

@@ -10,13 +10,13 @@
 | L1 逻辑自检 | `bubble_level1 --selftest` | 网格/物理不变量，退出码 0/1 |
 | L2 确定性模拟 | `bubble_level1 --sim-only 5` | 固定 1/60 步长跑纯战斗模拟，输出状态 + 校验和 |
 | L3 确定性渲染 | `bubble_level1 --render-test --frames N --shot out.ppm` | 固定时间步长渲染，不依赖 wall clock |
-| L4 后端一致性 | `gfx_conformance_blit` + `m1_demo --selftest` | 真实像素断言（blit / GL） |
+| L4 后端一致性 | `gfx_conformance_blit` / `gfx_conformance_sdl` / `m1_demo --selftest` | 真实像素断言（blit / gfx_sdl / GL） |
 | L5 真机冒烟 | 手动 | 启动、出图、按键、声音、退出 |
 
 ## 常用命令
 
 ```bash
-# 主机全量测试（CMake 注册的 2 个）
+# 主机全量测试（CMake 注册的 3 个）
 ctest --test-dir build-native --output-on-failure
 
 # 纯逻辑模拟（无窗口、无 GL、无音频）
@@ -33,6 +33,7 @@ cmp /tmp/a.ppm /tmp/b.ppm
 
 # 后端一致性
 ./build-native/gfx_conformance_blit
+./build-native/gfx_conformance_sdl
 ./build-native/m1_demo --selftest
 ```
 
@@ -67,6 +68,17 @@ cmp /tmp/a.ppm /tmp/b.ppm
 
 ```bash
 ./build-native/bubble_level1 --sim-only 5 > tests/golden/sim_5.txt
+```
+
+## 无线程构建
+
+`linux-nothreads` preset 关闭 `HGE_FEATURE_THREADS`，用于验证 blitter 的
+单线程路径（MCU 预留）：
+
+```bash
+cmake --preset linux-nothreads
+cmake --build --preset linux-nothreads -j
+ctest --test-dir build-native-nothreads --output-on-failure
 ```
 
 ## 不自动化的部分

@@ -9,15 +9,20 @@
 
 #include "gfx/gfx_blit.h"
 #include "platform/plat.h"
+#include "hge/hge_config.h"
 
 #include <algorithm>
 #include <cmath>
+#if HGE_FEATURE_THREADS
 #include <condition_variable>
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#if HGE_FEATURE_THREADS
 #include <mutex>
 #include <thread>
+#endif
 #include <vector>
 
 namespace {
@@ -74,6 +79,7 @@ public:
 
         const char* im = getenv("BUBBLE_IMMEDIATE");
         m_defer = !(im && im[0] == '1');
+#if HGE_FEATURE_THREADS
         if (m_defer && !getenv("BUBBLE_NO_THREADS")) {
             try {
                 m_worker = std::thread([this] { workerLoop(); });
@@ -82,6 +88,7 @@ public:
                 m_hasWorker = false;
             }
         }
+#endif
         snprintf(m_info, sizeof(m_info), "blit %dx%d (logical %dx%d) %s%s",
                  m_w, m_h, lw, lh, m_defer ? "defer" : "immediate",
                  m_hasWorker ? "+mt" : "");
@@ -91,6 +98,7 @@ public:
 
     void Shutdown() override
     {
+#if HGE_FEATURE_THREADS
         if (m_hasWorker) {
             {
                 std::lock_guard<std::mutex> lk(m_mtx);
@@ -100,6 +108,7 @@ public:
             m_worker.join();
             m_hasWorker = false;
         }
+#endif
         g_fbPtr = nullptr;
         m_fb.clear();
     }
@@ -272,6 +281,7 @@ public:
                         fl, (int)m_quads.size(), (int)m_hasWorker);
         }
         if (m_quads.empty()) return;
+#if HGE_FEATURE_THREADS
         const int mid = m_h / 2;
         if (!m_hasWorker || m_quads.size() < 16) {
             renderBand(0, m_h);
@@ -290,10 +300,14 @@ public:
                 m_cvDone.wait(lk, [this] { return m_jobDone; });
             }
         }
+#else
+        renderBand(0, m_h);
+#endif
         m_quads.clear();
     }
 
 private:
+#if HGE_FEATURE_THREADS
     void workerLoop()
     {
         for (;;) {
@@ -314,6 +328,7 @@ private:
             m_cvDone.notify_one();
         }
     }
+#endif
 
     void renderBand(int by0, int by1)
     {
@@ -551,11 +566,14 @@ private:
     int m_cx = 0, m_cy = 0, m_cw = 0, m_ch = 0;
     char m_info[128] = "blit not initialised";
 
+    bool m_hasWorker = false;
+#if HGE_FEATURE_THREADS
     std::thread m_worker;
     std::mutex m_mtx;
     std::condition_variable m_cvJob, m_cvDone;
-    bool m_hasWorker = false, m_jobPending = false, m_jobDone = false, m_quit = false;
+    bool m_jobPending = false, m_jobDone = false, m_quit = false;
     int m_bandY0 = 0, m_bandY1 = 0;
+#endif
 };
 
 GfxBlit* g_blit = nullptr;

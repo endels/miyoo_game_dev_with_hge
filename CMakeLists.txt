@@ -255,10 +255,24 @@ if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
         engine/src/gfx/gfx_blit.cpp)
     target_include_directories(gfx_conformance_blit PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/engine/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge")
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge"
+        "${HGE_GENERATED_DIR}")
     target_link_libraries(gfx_conformance_blit PRIVATE Threads::Threads)
     hge_set_warnings(gfx_conformance_blit)
     add_test(NAME gfx_conformance_blit COMMAND gfx_conformance_blit)
+
+    add_executable(gfx_conformance_sdl
+        tests/gfx_conformance_sdl.cpp
+        engine/src/gfx/gfx_sdl.cpp)
+    target_include_directories(gfx_conformance_sdl PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/engine/include/hge")
+    target_link_libraries(gfx_conformance_sdl PRIVATE ${HGE_SDL_TARGET} Threads::Threads)
+    if(NOT WIN32)
+        target_link_libraries(gfx_conformance_sdl PRIVATE ${CMAKE_DL_LIBS} m)
+    endif()
+    hge_set_warnings(gfx_conformance_sdl)
+    add_test(NAME gfx_conformance_sdl COMMAND gfx_conformance_sdl)
 
     if(UNIX AND TARGET bubble_level1)
         add_test(NAME bubble_sim_golden
