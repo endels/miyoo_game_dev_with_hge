@@ -19,6 +19,19 @@
       }
     },
     {
+      "name": "linux-native-debug",
+      "displayName": "Linux x86-64 (standalone, GL, debug info)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-dbg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "HGE_PLATFORM": "desktop",
+        "HGE_GFX": "gl",
+        "HGE_HOST": "standalone",
+        "HGE_DEBUG_ATTACH": "ON"
+      }
+    },
+    {
       "name": "miyoo-cross",
       "displayName": "Miyoo Mini+ (standalone, SDL_Renderer)",
       "generator": "Unix Makefiles",

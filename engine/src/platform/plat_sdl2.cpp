@@ -10,6 +10,10 @@
 #include <cstring>
 #include <vector>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 namespace plat {
 namespace detail {
 
@@ -97,6 +101,20 @@ void buildKeyMap()
 
 bool Init(int width, int height, const char* title, bool vsync, bool resizable)
 {
+#ifdef __linux__
+    // Opt-in debug helper: allow an external debugger (gdb -p) to attach even
+    // when /proc/sys/kernel/yama/ptrace_scope is 1. Enabled either at build
+    // time (HGE_DEBUG_ATTACH, used by the debug preset) or per run with
+    // HGE_ALLOW_GDB=1.
+#ifdef HGE_DEBUG_ATTACH
+    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#else
+    if (const char* allow = getenv("HGE_ALLOW_GDB")) {
+        if (allow[0] && allow[0] != '0')
+            prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+    }
+#endif
+#endif
 #ifdef SDL_MAIN_HANDLED
     SDL_SetMainReady();
 #endif

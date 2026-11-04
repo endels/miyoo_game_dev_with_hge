@@ -4,6 +4,7 @@
 /build-libretro-x86/
 /build-native/
 /build-native-nothreads/
+/build-dbg/
 /build-win-mingw/
 /CMakeFiles/
 /CMakeCache.txt
@@ -29,3 +30,7 @@ hello.ko
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Generated BGM sources (rebuild with tools/make_bgm.py)
+/tools/bgm/*.wav
+!/tools/bgm/music_redo_chip.wav

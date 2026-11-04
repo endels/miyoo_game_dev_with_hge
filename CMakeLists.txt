@@ -29,6 +29,7 @@ option(HGE_FEATURE_AUDIO "Build the audio mixer" ON)
 option(HGE_FEATURE_THREADS "Allow optional threads (blitter worker)" ON)
 option(HGE_FEATURE_FILESYSTEM "Allow filesystem-backed resources" ON)
 option(HGE_BUILD_TESTS "Build host-side test executables" ON)
+option(HGE_DEBUG_ATTACH "Allow gdb to attach without an env var (Linux, dev builds)" OFF)
 
 set(HGE_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 configure_file(
@@ -65,6 +66,9 @@ else()
 endif()
 if(HGE_GLES)
     list(APPEND HGE_PUBLIC_DEFS HGE_GLES=1)
+endif()
+if(HGE_DEBUG_ATTACH AND HGE_PLATFORM STREQUAL "desktop")
+    list(APPEND HGE_PUBLIC_DEFS HGE_DEBUG_ATTACH=1)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -214,7 +218,12 @@ if(HGE_HOST STREQUAL "standalone")
     endif()
 
     # Embed the asset packs into the desktop exe so it ships as a single file.
+    # The packs are link dependencies: touching audio.pak must relink, otherwise
+    # the exe keeps shipping the copies baked into it at the previous link.
     if(HGE_PLATFORM STREQUAL "desktop")
+        set_property(TARGET bubble_level1 APPEND PROPERTY LINK_DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/game.pak"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/audio.pak")
         find_program(HGE_PYTHON NAMES python python3)
         if(HGE_PYTHON)
             add_custom_command(TARGET bubble_level1 POST_BUILD

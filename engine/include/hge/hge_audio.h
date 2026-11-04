@@ -23,7 +23,16 @@ const char* Info();
 void Play(const Clip& clip, float volume);         // one-shot SFX
 void PlayMusic(const Clip& clip, float volume);    // loops
 void StopMusic();
+void StopEffects();                                // silence SFX, keep music
 void SetMusicVolume(float v);
+
+// Dev switch: keep the device (and the callback diagnostics) alive but emit
+// silence. Set with --mute or HGE_AUDIO_MUTE=1; survives Init().
+void SetMuted(bool on);
+bool Muted();
+
+// Main-thread diagnostic heartbeat (no-op in libretro builds).
+void Tick();
 
 // Pull model used by the libretro core: mix `frames` stereo (or `channels`)
 // samples into `out`. Safe to call on the same thread as Play().
