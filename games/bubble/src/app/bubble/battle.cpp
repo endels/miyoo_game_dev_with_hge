@@ -1,6 +1,8 @@
 #include "app/bubble/battle.h"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace bbl {
@@ -16,6 +18,48 @@ float rnd01()
     return (float)((s >> 8) & 0xFFFF) / 65535.0f;
 }
 
+// Separate RNG for the optional wall-bounce decision, so enabling or tuning
+// it does not shift the main AI stream (that made A/B comparisons meaningless).
+float bounceRand()
+{
+    static u32 s = 0x51ED270Bu;
+    s = s * 1664525u + 1013904223u;
+    return (float)((s >> 8) & 0xFFFF) / 65535.0f;
+}
+
+// Straight line of sight between two points, ignoring the very ends so the
+// target cell and the shooter are not treated as blockers.
+bool lineClear(const Game& g, float x0, float y0, float x1, float y1)
+{
+    const float dx = x1 - x0, dy = y1 - y0;
+    const float dist = sqrtf(dx * dx + dy * dy);
+    const int steps = (int)(dist / 8.0f);
+    for (int i = 3; i < steps - 2; ++i) {
+        const float u = (float)i / (float)steps;
+        if (g.SolidAt(x0 + dx * u, y0 + dy * u)) return false;
+    }
+    return true;
+}
+
+// Replay a shot on a throw-away copy and score the result, so the AI can tell
+// whether a fancy wall-bounce actually beats the plain shot.
+int shotValue(const Game& g, float aimX, float aimY)
+{
+    Game sim = g;
+    sim.AimAt(aimX, aimY);
+    sim.Fire();
+    int guard = 0;
+    while (sim.GetState() == Game::FLY && guard++ < 800)
+        sim.Update(1.0f / 120.0f);
+    if (sim.GetState() == Game::LOSE) return -100000;
+
+    const int cleared = (sim.Pops() - g.Pops()) + (sim.Drops() - g.Drops());
+    const int corrupt = sim.CorruptPopped() - g.CorruptPopped();
+    int v = cleared * 100 + corrupt * 500;
+    if (sim.Score() > g.Score()) v += (sim.Score() - g.Score()) / 20;
+    return v;
+}
+
 } // namespace
 
 void resetBattle(Side s[2])
@@ -28,6 +72,18 @@ void resetBattle(Side s[2])
         s[i].aiTimer = 1.2f;
         s[i].lastPops = s[i].game.Pops();
         s[i].lastDrops = s[i].game.Drops();
+        s[i].sparring = false;
+        s[i].keepWin = false;
+        s[i].stun = 0.0f;
+        s[i].clearStun = 3.0f;
+        s[i].fireScale = 1.0f;
+        s[i].garbageAfterMoves = 0;
+        s[i].energyGain = 1.0f;
+        s[i].stageRules = false;
+        s[i].dropEnergy = 1.0f;
+        s[i].waveSize = kWaveSize;
+        s[i].attackBonus = 0;
+        s[i].chainPay = false;
     }
     s[0].ai = false;
     s[1].ai = true;
@@ -35,6 +91,10 @@ void resetBattle(Side s[2])
 
 void aiUpdate(Side& s, float dt)
 {
+    if (s.stun > 0.0f) {
+        s.stun -= dt;
+        return;
+    }
     if (s.game.GetState() != Game::AIM) return;
     s.aiTimer -= dt;
     if (s.aiTimer > 0.0f) return;
@@ -44,15 +104,7 @@ void aiUpdate(Side& s, float dt)
     // Only consider cells with a clear line of fire: aiming at a buried cell
     // just makes the shot bounce off the outer shell.
     auto reachable = [&](float tx, float ty) {
-        const float sx = s.game.ShooterX(), sy = kShooterY;
-        const float dx = tx - sx, dy = ty - sy;
-        const float dist = sqrtf(dx * dx + dy * dy);
-        const int steps = (int)(dist / 8.0f);
-        for (int i = 3; i < steps - 2; ++i) {
-            const float u = (float)i / (float)steps;
-            if (s.game.SolidAt(sx + dx * u, sy + dy * u)) return false;
-        }
-        return true;
+        return lineClear(s.game, s.game.ShooterX(), kShooterY, tx, ty);
     };
 
     const int want = s.game.CurrentColor();
@@ -69,17 +121,87 @@ void aiUpdate(Side& s, float dt)
         }
     }
 
-    if (bestR < 0) {
-        s.game.AimAt(s.game.ShooterX() + (rnd01() - 0.5f) * 40.0f, 120.0f);
+    float aimX = 0.0f, aimY = 0.0f;
+    if (bestR >= 0) {
+        aimX = s.game.XOf(bestR, bestC);
+        aimY = Game::YOf(bestR);
+    }
+
+    // Occasional one-bounce shot. Wall shots make the CPU read as smarter,
+    // but they are deliberately rare (12%) and only taken when the straight
+    // options are weak, so the match does not become unfair.
+    bool bounceShot = false;
+    static float bounceP = [] {
+        const char* e = getenv("HGE_AI_BOUNCE");
+        return e ? (float)atof(e) : 0.6f;
+    }();
+    if (bestScore < 200 && bounceRand() < bounceP) {
+        const float wallL = s.game.X0() + kR;
+        const float wallR = s.game.X0() + s.game.FieldW() - kR;
+        const float sx = s.game.ShooterX(), sy = kShooterY;
+        int   bScore = -100000;
+        float bX = 0.0f, bY = 0.0f;
+        for (int r = 0; r <= s.game.RowsUsed() && r < kMaxRows; ++r) {
+            const int n = s.game.RowCount(r);
+            for (int c = 0; c < n; ++c) {
+                if (s.game.Cell(r, c)) continue;
+                if (!s.game.Attachable(r, c)) continue;
+                const float tx = s.game.XOf(r, c), ty = Game::YOf(r);
+                if (lineClear(s.game, sx, sy, tx, ty)) continue;  // direct works
+                for (int w = 0; w < 2; ++w) {
+                    // Mirror the target across the side wall: aiming at the
+                    // mirrored point makes the ball bounce exactly once.
+                    const float wall = w ? wallR : wallL;
+                    const float mx = 2.0f * wall - tx;
+                    const float t = (wall - sx) / (mx - sx);
+                    if (!(t > 0.02f && t < 0.98f)) continue;
+                    const float by = sy + t * (ty - sy);
+                    if (by < kCeilY + kR) continue;        // ceiling arrives first
+                    if (!lineClear(s.game, sx, sy, wall, by)) continue;
+                    if (!lineClear(s.game, wall, by, tx, ty)) continue;
+                    const int same = s.game.SameNeighbors(r, c, want);
+                    const int score = same * 100 - r * 3 + 40 + (int)(bounceRand() * 6.0f);
+                    if (score > bScore) { bScore = score; bX = mx; bY = ty; }
+                }
+            }
+        }
+        if (bScore > -100000) {
+            // Verify against the real physics: only bounce when the simulated
+            // result is clearly better than the straight shot, so the trick
+            // never costs the CPU a turn.
+            const int direct = (bestR >= 0) ? shotValue(s.game, aimX, aimY) : -100000;
+            const int bounce = shotValue(s.game, bX, bY);
+            if (bounce >= direct && bounce >= 100) {
+                bounceShot = true;
+                aimX = bX;
+                aimY = bY;
+                if (getenv("HGE_DEBUG_AI"))
+                    fprintf(stderr, "[ai] bounce move=%d aim=%.0f,%.0f direct=%d bounce=%d\n",
+                            s.game.Moves(), bX, bY, direct, bounce);
+            }
+        }
+    }
+
+    if (bestR < 0 && !bounceShot) {
+        const float miss = s.sparring ? (s.fireScale < 0.8f ? 44.0f : 64.0f) : 40.0f;
+        s.game.AimAt(s.game.ShooterX() + (rnd01() - 0.5f) * miss, 120.0f);
         s.game.Fire();
-        s.aiTimer = 0.9f + rnd01() * 0.8f;
+        s.aiTimer = s.sparring
+                        ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                        : 0.9f + rnd01() * 0.8f;
         return;
     }
 
-    const float tx = s.game.XOf(bestR, bestC) + (rnd01() - 0.5f) * 14.0f;
-    s.game.AimAt(tx, Game::YOf(bestR));
+    const float jitter = bounceShot
+                             ? 5.0f
+                             : (s.sparring ? (s.fireScale < 0.8f ? 18.0f : 26.0f) : 14.0f);
+    const float tx = aimX + (rnd01() - 0.5f) * jitter;
+    s.game.AimAt(tx, aimY);
     s.game.Fire();
-    s.aiTimer = 1.00f + rnd01() * 0.75f;
+    s.aiTimer = (s.sparring
+                     ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                     : 1.00f + rnd01() * 0.75f) +
+                (bounceShot ? 0.15f : 0.0f);
 }
 
 void updateBattle(Side s[2], float dt)
@@ -92,16 +214,34 @@ void updateBattle(Side s[2], float dt)
         const int dd = s[i].game.Drops() - s[i].lastDrops;
         s[i].lastPops = s[i].game.Pops();
         s[i].lastDrops = s[i].game.Drops();
-        if (dp > 0 || dd > 0) {
+        if ((dp > 0 || dd > 0) && s[i].game.Moves() >= s[i].garbageAfterMoves) {
             // direct pops count half, chain drops count full: dropping is the
             // skilled play, so it should be what charges the attack
-            s[i].energy += (float)dp * 0.5f + (float)dd;
+            s[i].energy += ((float)dp * 0.5f + (float)dd * s[i].dropEnergy) *
+                           s[i].energyGain;
+
+            // Big drops and 5+ pop chains are skill plays: bank extra garbage
+            // for the next attack wave. The queued-riser cap still bounds it.
+            int bonus = 0;
+            if (s[i].stageRules && dd >= 3)
+                bonus = (dd >= 6) ? 2 : 1;
+            if (s[i].stageRules && s[i].chainPay && dp >= 5)
+                ++bonus;
+            if (bonus > s[i].attackBonus) s[i].attackBonus = bonus;
+            if (s[i].attackBonus > 3) s[i].attackBonus = 3;
+
             while (s[i].energy >= (float)kEnergyPerWave) {
                 s[i].energy -= (float)kEnergyPerWave;
-                s[1 - i].game.AddGarbage(kWaveSize);
+                int wave = s[i].waveSize + (s[i].stageRules ? s[i].attackBonus : 0);
+                if (wave > 8) wave = 8;
+                s[i].attackBonus = 0;
+                s[1 - i].game.AddGarbage(wave);
             }
         }
-        if (s[i].game.GetState() == Game::WIN) s[i].game.ResumeIfWon();
+        if (s[i].game.GetState() == Game::WIN) {
+            if (s[i].sparring) s[i].stun = s[i].clearStun;
+            if (!s[i].keepWin) s[i].game.ResumeIfWon();
+        }
     }
 }
 

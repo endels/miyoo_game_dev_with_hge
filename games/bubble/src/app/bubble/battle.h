@@ -15,6 +15,21 @@ struct Side {
     int   lastPops;
     int   lastDrops;
     bool  ai;
+
+    // Stage tuning. The defaults reproduce the original endless-versus AI;
+    // resetStage-style setup can slow the AI down and delay garbage.
+    bool  sparring;
+    bool  keepWin;          // stage boards stay WIN so the app can see it
+    float stun;
+    float clearStun;        // pause after the AI clears its own board
+    float fireScale;        // <1 = faster sparring AI
+    int   garbageAfterMoves;
+    float energyGain;
+    bool  stageRules;       // stage tuning: drops charge faster, bigger waves
+    float dropEnergy;       // energy per dropped bubble
+    int   waveSize;         // base garbage bubbles per attack wave
+    int   attackBonus;      // extra bubbles earned by a big drop / chain
+    bool  chainPay;         // 5+ pop chains bank an extra garbage bubble
 };
 
 void resetBattle(Side s[2]);

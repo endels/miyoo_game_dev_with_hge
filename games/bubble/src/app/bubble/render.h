@@ -12,6 +12,29 @@ namespace bbl {
 const int kWinW = 960;
 const int kWinH = 540;
 
+struct HudState {
+    int stage = 1;
+    int corruptPopped = 0;
+    int corruptTotal = 0;
+    int phase = 0;              // 0 play, 1 clear, 2 draft, 3 over
+    int draftSel = 0;
+    const char* draftName[3] = {0, 0, 0};
+    const char* draftDesc[3] = {0, 0, 0};
+    bool perfect = false;
+    bool canRetry = false;
+    int  retries = 0;
+    const char* banner = nullptr;
+    const char* modName = nullptr;
+    const char* modDesc = nullptr;
+    float bannerTimer = 0.0f;
+    float corruptFlash = 0.0f;
+    float chainTimer = 0.0f;
+    int   chainRank = 0;
+    int   chainCount = 0;
+    float shake = 0.0f;
+    float shakeAmp = 0.0f;
+};
+
 struct RenderCtx {
     IGfx* g = nullptr;
     IGfxTexture* bg = nullptr;
@@ -34,7 +57,8 @@ struct RenderCtx {
 
 bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err);
 void FreeTextures(RenderCtx& c);
-void RenderFrame(RenderCtx& c, Side sides[2], double time, float resultTimer);
+void RenderFrame(RenderCtx& c, Side sides[2], double time, float resultTimer,
+                 const HudState& hud);
 
 } // namespace bbl
 

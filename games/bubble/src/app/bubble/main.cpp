@@ -1,10 +1,16 @@
-﻿// Bubble versus — player vs AI on two boards.
+﻿// Bubble stage prototype — player vs AI on two boards, with a corrupted-bubble
+// objective on the player's board.
 //
 //   bubble_level1              play (mouse aim, click/space fire, R restart)
 //   bubble_level1 --selftest   headless grid/physics invariants, exit 0/1
 //   bubble_level1 --shot a.ppm render one frame to a PPM and exit
+//   bubble_level1 --autoplay   dev: a bot plays the player board
+//   bubble_level1 --retries N  consecutive stage losses before GAME OVER (default 3)
+//   bubble_level1 --mute       silent run (audio callback keeps ticking)
+//   --debug-clear / --debug-draft  jump to a screenshot state (development)
 
 #include "hge_app.h"
+#include "hge_audio.h"
 #include "app/bubble/battle.h"
 #include "app/bubble/bubble_app.h"
 #include "app/bubble/game.h"
@@ -23,6 +29,13 @@ struct Options {
     float       simSeconds = 0.0f;
     double      simOnly = -1.0;
     bool        renderTest = false;
+    bool        debugClear = false;
+    bool        debugDraft = false;
+    bool        debugChain = false;
+    bool        audioStress = false;
+    bool        autoplay = false;
+    bool        mute = false;
+    int         retries = 3;
     double      fixedDt = 0.0;
     int         shotFrame = 40;
     bool        shotFrameGiven = false;
@@ -44,6 +57,13 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--sim") && i + 1 < argc) o.simSeconds = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--sim-only") && i + 1 < argc) o.simOnly = atof(argv[++i]);
         else if (!strcmp(argv[i], "--render-test")) o.renderTest = true;
+        else if (!strcmp(argv[i], "--debug-clear")) o.debugClear = true;
+        else if (!strcmp(argv[i], "--debug-draft")) o.debugDraft = true;
+        else if (!strcmp(argv[i], "--debug-chain")) o.debugChain = true;
+        else if (!strcmp(argv[i], "--audio-stress")) o.audioStress = true;
+        else if (!strcmp(argv[i], "--autoplay")) o.autoplay = true;
+        else if (!strcmp(argv[i], "--mute")) o.mute = true;
+        else if (!strcmp(argv[i], "--retries") && i + 1 < argc) o.retries = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fixed-dt") && i + 1 < argc) o.fixedDt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--shot-frame") && i + 1 < argc) {
             o.shotFrame = atoi(argv[++i]);
@@ -106,6 +126,13 @@ int runGame(int argc, char** argv)
     gameOpt.warmup = opts.warmup;
     gameOpt.animOffset = opts.animOffset;
     gameOpt.simSeconds = opts.simSeconds;
+    gameOpt.debugClear = opts.debugClear;
+    gameOpt.debugDraft = opts.debugDraft;
+    gameOpt.debugChain = opts.debugChain;
+    gameOpt.audioStress = opts.audioStress;
+    gameOpt.autoplay = opts.autoplay;
+    if (opts.mute) audio::SetMuted(true);
+    gameOpt.retries = opts.retries;
     if (argc > 0 && argv[0]) gameOpt.selfPath = argv[0];
 
     hge::RunConfig cfg;
@@ -113,6 +140,9 @@ int runGame(int argc, char** argv)
     cfg.height = bbl::kWinH;
     cfg.title = "Bubble Versus - HGE-SDL";
     cfg.vsync = (opts.shotPath == nullptr) && !opts.renderTest;
+    // WSLg/llvmpipe often ignores the swap interval; an uncapped loop can
+    // starve the SDL audio callback. Cap the game at 60 FPS on desktop.
+    cfg.targetFps = 60.0;
     cfg.resizable = true;
     cfg.maxFrames = opts.frames;
     cfg.shotPath = opts.shotPath;

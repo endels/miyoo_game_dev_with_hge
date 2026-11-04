@@ -175,6 +175,41 @@ int waveFrameFor(float front, float x, float halfW, int frames, int sweep)
 void drawDino(RenderCtx& c, IGfx* g, int variant, float cx, float feetY, bool flip,
               const Game& game, float time);
 
+void drawBombBadge(RenderCtx& c, float x, float y, float size)
+{
+    const float s = size * 0.62f;
+    quad(c.g, c.dot, x - s * 0.5f, y - s * 0.5f, s, s, 0xE0101018);
+    centreText(c, x, y - 13.0f, "B", 1.0f, 0xFFFFFFFF);
+}
+
+void drawSpecialBadge(RenderCtx& c, int special, float x, float y, float size, float time)
+{
+    if (special == kSpecialNone) return;
+    if (special == kSpecialBomb) {
+        drawBombBadge(c, x, y, size);
+        return;
+    }
+
+    const float s = size * 0.62f;
+    quad(c.g, c.dot, x - s * 0.5f, y - s * 0.5f, s, s, 0xE0101018);
+    if (special == kSpecialPrism) {
+        const float pulse = 0.5f + 0.5f * sinf(time * 6.0f);
+        const u32 a = (u32)(130.0f + 100.0f * pulse);
+        quad(c.g, c.ring, x - kR, y - kR, kD, kD, (a << 24) | 0x0080D0FF);
+        centreText(c, x, y - 13.0f, "P", 1.0f, 0xFFFFFFFF);
+    } else if (special == kSpecialChameleon) {
+        quad(c.g, c.ring, x - kR, y - kR, kD, kD, 0xB000FF80);
+        centreText(c, x, y - 13.0f, "C", 1.0f, 0xFFFFFFFF);
+    }
+}
+
+void drawCorruptBadge(RenderCtx& c, float x, float y, float pulse)
+{
+    const u32 a = (u32)(145.0f + 90.0f * pulse);
+    quad(c.g, c.ring, x - kR, y - kR, kD, kD, (a << 24) | 0x00B060FF);
+    centreText(c, x, y - 12.0f, "!", 1.0f, 0xFFFFE0FF);
+}
+
 void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, bool dinoOnLeft)
 {
     IGfx* g = c.g;
@@ -191,6 +226,10 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
     // death line
     for (float x = x0 + 8; x < x0 + fw - 20; x += 26)
         quad(g, nullptr, x, kDeathY, 12, 2, 0x99E05A5A);
+
+    // Clip the playfield contents at the ceiling lip: the incoming top row
+    // slides down from under it, so it must not paint over the header.
+    g->SetScissor((int)x0, 10, (int)fw, (int)(WIN_H - 10));
 
     // light band sweeping this board
     const int   kFrames = 16;
@@ -216,6 +255,10 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
             const float u1 = (fr + 1) / (float)kFrames;
             quadUV(g, c.bubblesAnim[(v - 1) % kColors], x - kR, game.YOfLive(r) - kR,
                    kD, kD, u0, 0.0f, u1, 1.0f, 0xFFFFFFFF);
+            if (game.IsCorrupt(r, cc)) {
+                const float pulse = 0.5f + 0.5f * sinf(time * 5.0f + (float)(r * 3 + cc));
+                drawCorruptBadge(c, x, game.YOfLive(r), pulse);
+            }
         }
     }
 
@@ -280,11 +323,14 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
         const float u1 = (fr + 1) / (float)kFrames;
         quadUV(g, c.bubblesAnim[(game.CurrentColor() - 1) % kColors],
                sx - kR, kShooterY - kR, kD, kD, u0, 0.0f, u1, 1.0f, 0xFFFFFFFF);
+        drawSpecialBadge(c, game.CurrentSpecial(), sx, kShooterY, kD, time);
     }
 
-    if (game.IsFlying())
+    if (game.IsFlying()) {
         quad(g, c.bubbles[(game.ShotColor() - 1) % kColors],
              game.ShotX() - kR, game.ShotY() - kR, kD, kD, 0xFFFFFFFF);
+        drawSpecialBadge(c, game.ShotSpecial(), game.ShotX(), game.ShotY(), kD, time);
+    }
 
     // next bubble, opposite side of the dino
     {
@@ -292,6 +338,7 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
         quad(g, nullptr, nx, kShooterY - 22, 44, 44, 0x50000000);
         quad(g, c.bubbles[(game.NextColor() - 1) % kColors],
              nx + 2, kShooterY - 20, 40, 40, 0xB0FFFFFF);
+        drawSpecialBadge(c, game.NextSpecial(), nx + 22.0f, kShooterY, 40.0f, time);
     }
 
     drawDino(c, g, variant, dinoOnLeft ? sx - 84.0f : sx + 84.0f, 530.0f,
@@ -314,6 +361,8 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
                  (a << 24) | (p.color & 0x00FFFFFF));
         }
     }
+
+    g->SetScissor(0, 0, 0, 0);
 }
 
 void drawDino(RenderCtx& c, IGfx* g, int v, float cx, float feetY, bool flip,
@@ -331,7 +380,7 @@ void drawDino(RenderCtx& c, IGfx* g, int v, float cx, float feetY, bool flip,
     const float blinkAt = blinkT - 0.42f;
     const float glance = fmodf(time * 0.7f + phase * 3.1f, 9.0f);
     const bool  bored = game.IdleTime() > 6.0f;
-    const bool  combo = game.LastPops() >= 5 && game.SinceResolve() < 0.9f;
+    const bool  combo = game.LastClear() >= 5 && game.SinceResolve() < 0.9f;
     const float peek = fmodf(time * 0.18f + phase * 1.7f, 1.0f);
 
     if (game.GetState() == Game::WIN) {
@@ -341,7 +390,8 @@ void drawDino(RenderCtx& c, IGfx* g, int v, float cx, float feetY, bool flip,
         if (sadNow && c.dinoSad[v]) t = c.dinoSad[v];
         else if (!sadNow && c.dinoLook[v]) t = c.dinoLook[v];
     } else if (combo) {
-        if (c.dinoShoot[v]) t = c.dinoShoot[v];
+        if (c.dinoCheer[v]) t = c.dinoCheer[v];
+        else if (c.dinoShoot[v]) t = c.dinoShoot[v];
     } else if (game.IsFlying()) {
         if (c.dinoShoot[v]) t = c.dinoShoot[v];
     } else if (bored && peek > 0.88f) {
@@ -441,7 +491,8 @@ void FreeTextures(RenderCtx& c)
     c = RenderCtx();
 }
 
-void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer)
+void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
+                 const HudState& hud)
 {
     IGfx* g = c.g;
     g->BeginFrame();
@@ -452,15 +503,57 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer)
 
     quad(g, c.bg, 0, 0, WIN_W, WIN_H, 0xFFFFFFFF);
 
+    // Board-only shake keeps the HUD/background stable; a full-screen shake
+    // read as a broken display on the software renderer.
+    if (hud.shake > 0.0f) {
+        float k = hud.shake / 0.14f;
+        if (k > 1.0f) k = 1.0f;
+        const float amp = hud.shakeAmp * k;
+        const float sx = sinf((float)time * 90.0f) * amp;
+        const float sy = cosf((float)time * 77.0f) * amp;
+        g->SetTransform(0, 0, sx, sy, 0.0f, 1.0f, 1.0f);
+    }
     drawBoard(c, s[0].game, (float)time, true, 0, true);
+    g->SetTransform(0, 0, 0, 0, 0, 1, 1);
     drawBoard(c, s[1].game, (float)time, false, 1, false);
+
+    // Short purple pulse when a corrupted bubble is collected. One full-screen
+    // quad for ~0.18 s; no particles and no long-lived effect.
+    if (hud.corruptFlash > 0.0f) {
+        float k = hud.corruptFlash / 0.18f;
+        if (k > 1.0f) k = 1.0f;
+        const u32 a = (u32)(80.0f * k);
+        quad(g, nullptr, 0, 0, WIN_W, WIN_H, (a << 24) | 0x00B060FF);
+    }
 
     // ---- centre column ------------------------------------------------
     quad(g, nullptr, kCenterX, 0, 1, WIN_H, 0xFF2A3648);
     quad(g, nullptr, kCenterX + kCenterW - 1, 0, 1, WIN_H, 0xFF2A3648);
     quad(g, nullptr, kCenterX, 0, kCenterW, WIN_H, 0x40060910);
 
-    centreText(c, kCenterX + kCenterW * 0.5f, 16, "VS", 2.0f, 0xFFEAF0FA);
+    if (hud.phase == 0) {
+    {
+        char stageBuf[24];
+        snprintf(stageBuf, sizeof(stageBuf), "STAGE %d", hud.stage);
+        centreText(c, kCenterX + kCenterW * 0.5f, 8, stageBuf, 1.0f, 0xFFEAF0FA);
+    }
+
+    centreText(c, kCenterX + kCenterW * 0.5f, 38, "DEFEAT CPU", 1.0f, 0xFFEAF0FA);
+
+    if (hud.corruptTotal > 0) {
+        char bonusBuf[24];
+        snprintf(bonusBuf, sizeof(bonusBuf), "BONUS %d/%d",
+                 hud.corruptPopped, hud.corruptTotal);
+        centreText(c, kCenterX + kCenterW * 0.5f, 66, bonusBuf, 1.0f, 0xFFC9A6FF);
+        const float pw = 14.0f, gap = 8.0f;
+        const float totalW = hud.corruptTotal * pw + (hud.corruptTotal - 1) * gap;
+        float px = kCenterX + (kCenterW - totalW) * 0.5f;
+        for (int i = 0; i < hud.corruptTotal; ++i) {
+            const u32 col = (i < hud.corruptPopped) ? 0xFFC080FF : 0xC05A6A82;
+            quad(g, c.dot, px, 92.0f, pw, pw, col);
+            px += pw + gap;
+        }
+    }
 
     struct BarInfo { float x; const char* label; u32 col; };
     const BarInfo bars[2] = {
@@ -496,11 +589,127 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer)
 
     centreText(c, kCenterX + kCenterW * 0.5f, 448, "CLEAR", 1.0f, 0xFF8FA6C4);
     centreText(c, kCenterX + kCenterW * 0.5f, 464, "TO ATTACK", 1.0f, 0xFF8FA6C4);
+    if (hud.modName)
+        centreText(c, kCenterX + kCenterW * 0.5f, 502, hud.modName, 1.0f, 0xFFFFD24A);
+    }
 
-    // ---- result -------------------------------------------------------
+    // Chain rank, drawn directly over the player's board. No panel: the
+    // feedback must never degrade into an empty semi-transparent box.
+    if (hud.phase == 0 && hud.chainTimer > 0.0f &&
+        (hud.chainRank > 0 || hud.chainCount > 0)) {
+        static const char* kNames[4] = {"NICE!", "GREAT!", "INSANE!", "UNREAL!"};
+        const u32 cols[4] = {0xFFBFE8FF, 0xFFFFE08A, 0xFFFF9AD0, 0xFFFF6A6A};
+        int r = hud.chainRank;
+        if (r < 0) r = 0;
+        if (r > 3) r = 3;
+        const char* label = kNames[r];
+        const float cx = s[0].game.ShooterX();
+        char buf[32];
+        snprintf(buf, sizeof(buf), "CHAIN %d", hud.chainCount);
+        centreText(c, cx + 3.0f, 301.0f, label, 2.0f, 0xE0101018);
+        centreText(c, cx + 3.0f, 339.0f, buf, 1.0f, 0xE0101018);
+        centreText(c, cx, 298.0f, label, 2.0f, cols[r]);
+        centreText(c, cx, 336.0f, buf, 1.0f, 0xFFD8E4F6);
+    }
+
+    // ---- stage overlays ----------------------------------------------
+    if (hud.phase == 1) {               // CLEAR
+        quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xD8000000);
+        centreText(c, WIN_W * 0.5f, 180, "STAGE CLEAR", 3.0f, 0xFFFFE08A);
+        if (hud.perfect)
+            centreText(c, WIN_W * 0.5f, 238, "PERFECT", 1.5f, 0xFFFFD24A);
+        centreText(c, WIN_W * 0.5f, 320, "PRESS FIRE", 1.0f, 0xFF9FB3CE);
+    } else if (hud.phase == 2) {        // DRAFT
+        quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xF4000000);
+        centreText(c, WIN_W * 0.5f, 62, "CHOOSE A MOD", 2.0f, 0xFFEAF0FA);
+
+        const float cardW = 220.0f, cardH = 250.0f, cardY = 150.0f;
+        for (int i = 0; i < 3; ++i) {
+            const float x = 110.0f + (float)i * 250.0f;
+            const bool sel = (i == hud.draftSel);
+            const u32 fill = sel ? 0xFF223451u : 0xFF111927u;
+            const u32 edge = sel ? 0xFFFFD24A : 0xFF3A4A62;
+            quad(g, nullptr, x, cardY, cardW, cardH, fill);
+            quad(g, nullptr, x, cardY, cardW, 2, edge);
+            quad(g, nullptr, x, cardY + cardH - 2, cardW, 2, edge);
+            quad(g, nullptr, x, cardY, 2, cardH, edge);
+            quad(g, nullptr, x + cardW - 2, cardY, 2, cardH, edge);
+
+            centreText(c, x + cardW * 0.5f, cardY + 30.0f,
+                       hud.draftName[i] ? hud.draftName[i] : "?", 1.0f,
+                       sel ? 0xFFFFE08A : 0xFFEAF0FA);
+            centreText(c, x + cardW * 0.5f, cardY + 96.0f,
+                       hud.draftDesc[i] ? hud.draftDesc[i] : "", 1.0f,
+                       sel ? 0xFFD8E4F6 : 0xFF9FB3CE);
+            if (sel)
+                centreText(c, x + cardW * 0.5f, cardY + cardH - 42.0f,
+                           "SELECT", 1.0f, 0xFFFFD24A);
+        }
+        centreText(c, WIN_W * 0.5f, 438, "LEFT / RIGHT + FIRE", 1.0f, 0xFF8FA6C4);
+    } else if (hud.phase == 3) {        // OVER
+        quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xB4000000);
+        centreText(c, WIN_W * 0.5f, 180, "YOU LOSE", 3.0f, 0xFFFF8A8A);
+        centreText(c, WIN_W * 0.5f, 300,
+                   hud.canRetry ? "PRESS FIRE TO RETRY" : "PRESS R TO RESTART",
+                   1.0f, 0xFF9FB3CE);
+        if (hud.canRetry && hud.retries > 0) {
+            char buf[32];
+            if (hud.retries == 1)
+                snprintf(buf, sizeof(buf), "1 RETRY LEFT");
+            else
+                snprintf(buf, sizeof(buf), "%d RETRIES LEFT", hud.retries);
+            centreText(c, WIN_W * 0.5f, 330, buf, 1.0f, 0xFF8FA6C4);
+        }
+    } else if (hud.phase == 4) {        // BRIEF
+        quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xF8000000);
+
+        char buf[64];
+        snprintf(buf, sizeof(buf), "STAGE %d", hud.stage);
+        centreText(c, WIN_W * 0.5f, 40, buf, 2.5f, 0xFFEAF0FA);
+
+        centreText(c, WIN_W * 0.5f, 120, "DEFEAT THE CPU", 1.5f, 0xFFEAF0FA);
+
+        const float icon = 90.0f;
+        const float ix = WIN_W * 0.5f - icon * 0.5f;
+        const float iy = 180.0f;
+        quad(g, c.bubbles[3], ix, iy, icon, icon, 0xFFFFFFFF);
+        const float pulse = 0.5f + 0.5f * sinf((float)time * 5.0f);
+        const u32 ringA = (u32)(150.0f + 90.0f * pulse);
+        quad(g, c.ring, ix, iy, icon, icon, (ringA << 24) | 0x00B060FF);
+        centreText(c, WIN_W * 0.5f, iy + 18.0f, "!", 2.0f, 0xFFFFE0FF);
+
+        const int total = hud.corruptTotal > 0 ? hud.corruptTotal : 3;
+        snprintf(buf, sizeof(buf), "PURPLE RING = CORRUPTED BONUS (%d)", total);
+        centreText(c, WIN_W * 0.5f, 290, buf, 1.0f, 0xFFC9A6FF);
+        centreText(c, WIN_W * 0.5f, 326,
+                   "POP THEM TO SEND EXTRA GARBAGE",
+                   1.0f, 0xFF9FB3CE);
+        centreText(c, WIN_W * 0.5f, 360,
+                   "CLEAR YOUR OWN BOARD TO ATTACK",
+                   1.0f, 0xFF9FB3CE);
+        centreText(c, WIN_W * 0.5f, 378,
+                   "P = PRISM: MATCHES ANY COLOUR",
+                   1.0f, 0xFF9FE0FF);
+        centreText(c, WIN_W * 0.5f, 400,
+                   "C = CHAMELEON: PAINTS NEIGHBOURS",
+                   1.0f, 0xFF9FE0FF);
+        if (hud.modName) {
+            if (hud.modDesc)
+                snprintf(buf, sizeof(buf), "MOD: %s - %s", hud.modName, hud.modDesc);
+            else
+                snprintf(buf, sizeof(buf), "MOD: %s", hud.modName);
+            centreText(c, WIN_W * 0.5f, 426, buf, 1.0f, 0xFFFFD24A);
+        }
+        centreText(c, WIN_W * 0.5f, 455, "PRESS FIRE TO START", 1.0f, 0xFF8FA6C4);
+    } else if (hud.banner && hud.bannerTimer > 0.0f) {
+        centreText(c, kCenterX + kCenterW * 0.5f, 420.0f, hud.banner, 1.0f,
+                   0xFFFFD24A);
+    }
+
+    // Legacy endless-versus result overlay, kept for --sim/screenshot paths.
     const bool playerDead = s[0].game.GetState() == Game::LOSE;
     const bool aiDead = s[1].game.GetState() == Game::LOSE;
-    if (playerDead || aiDead) {
+    if (hud.phase == 0 && (playerDead || aiDead)) {
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xB4000000);
         const bool win = aiDead && !playerDead;
         centreText(c, WIN_W * 0.5f, 200, win ? "YOU WIN" : "YOU LOSE", 3.0f,

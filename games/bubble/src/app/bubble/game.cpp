@@ -7,7 +7,13 @@
 namespace bbl {
 
 namespace {
-const float kHitDist2 = kD * kD * 0.90f;   // 37.9px: touching but not overlapping
+// Flight collision radius. Touching bubbles sit exactly kD apart, so a gap
+// between two bubbles is only kD wide and a full-diameter test demands a
+// pixel-perfect shot. Shrinking the effective radius gives the player a few
+// pixels of slack on each side, which reads as "it squeezed through" instead
+// of sticking on a graze. 0.86 -> ~5.6px of forgiveness per side.
+const float kStickScale = 0.86f;
+const float kHitDist2    = kD * kD * kStickScale * kStickScale;
 const float kPi = 3.14159265359f;
 }
 
@@ -33,19 +39,72 @@ void Game::SetColors(int n)
     m_colors = n;
 }
 
+void Game::LoadStage(int rows, int shift, const StageCell* cells, int count)
+{
+    if (rows < 1) rows = 1;
+    if (rows > kMaxRows) rows = kMaxRows;
+    memset(m_cell, 0, sizeof(m_cell));
+    memset(m_corrupt, 0, sizeof(m_corrupt));
+    m_rows = rows;
+    m_shift = shift & 1;
+    m_corruptPopped = 0;
+    m_corruptTotal = 0;
+    for (int i = 0; i < count; ++i) {
+        const StageCell& s = cells[i];
+        if (s.r < 0 || s.r >= m_rows || s.c < 0 || s.c >= RowCount(s.r)) continue;
+        m_cell[s.r][s.c] = (u8)s.color;
+        if (s.corrupt) {
+            if (!m_corrupt[s.r][s.c]) ++m_corruptTotal;
+            m_corrupt[s.r][s.c] = true;
+        }
+    }
+}
+
+void Game::SetCorrupt(int r, int c)
+{
+    if (r < 0 || r >= kMaxRows || c < 0 || c >= RowCount(r)) return;
+    if (!m_corrupt[r][c]) {
+        m_corrupt[r][c] = true;
+        ++m_corruptTotal;
+    }
+}
+
+bool Game::IsCorrupt(int r, int c) const
+{
+    if (r < 0 || r >= kMaxRows || c < 0 || c >= RowCount(r)) return false;
+    return m_corrupt[r][c];
+}
+
+
+
 void Game::Reset(u32 seed)
 {
     memset(m_cell, 0, sizeof(m_cell));
+    memset(m_corrupt, 0, sizeof(m_corrupt));
     m_rows  = 4;
     m_shift = 0;
     m_score = 0;
     m_moves = 0;
     m_pops = 0;
     m_lastPops = 0;
+    m_lastClear = 0;
     m_idle = 0.0f;
     m_sinceRes = 10.0f;
     m_drops = 0;
     m_descends = 0;
+    m_corruptPopped = 0;
+    m_corruptTotal = 0;
+    m_bombAtMove = -1;
+    m_bombEvery = 0;
+    m_prismAtMove = -1;
+    m_prismEvery = 0;
+    m_chamAtMove = -1;
+    m_chamEvery = 0;
+    m_bombRadius = 1.5f;
+    m_riserSpeed = 1.0f;
+    m_curSpecial = kSpecialNone;
+    m_nextSpecial = kSpecialNone;
+    m_shotSpecial = kSpecialNone;
     m_state = AIM;
     m_angle = -kPi * 0.5f;
     m_rand  = seed ? seed : 1u;
@@ -60,6 +119,7 @@ void Game::Reset(u32 seed)
     m_dirx = 0.0f; m_diry = -1.0f; m_sc = 1;
     m_ceil = 0.0f;
     m_ceilAnim = 0.0f;
+    m_ceilRowIn = false;
 
     for (int r = 0; r < m_rows; ++r) {
         const int n = RowCount(r);
@@ -189,30 +249,46 @@ void Game::AimBy(float d)
 void Game::Fire()
 {
     if (m_state != AIM) return;
+
     m_sx = ShooterX();
     m_sy = kShooterY;
     m_dirx = cosf(m_angle);
     m_diry = sinf(m_angle);
     m_sc = m_cur;
+    m_shotSpecial = CurrentSpecial();
     m_state = FLY;
     m_idle = 0.0f;
     ++m_moves;
     m_cur = m_next;
+    m_curSpecial = m_nextSpecial;
     m_next = PickColor();
+    m_nextSpecial = kSpecialNone;
 }
 
-bool Game::HitBubble(float x, float y) const
+bool Game::HitBubbleCell(float x, float y, int* outR, int* outC) const
 {
+    // Returns the *closest* bubble in contact: the landing cell is picked from
+    // its empty neighbours, so the ball cannot snap across the board.
+    float best = kHitDist2;
+    int br = -1, bc = -1;
     for (int r = 0; r < m_rows && r < kMaxRows; ++r) {
         const int n = RowCount(r);
         const float dy = YOfLive(r) - y;
         for (int c = 0; c < n; ++c) {
             if (!m_cell[r][c]) continue;
             const float dx = XOf(r, c) - x;
-            if (dx * dx + dy * dy < kHitDist2) return true;
+            const float d2 = dx * dx + dy * dy;
+            if (d2 < best) { best = d2; br = r; bc = c; }
         }
     }
-    return false;
+    if (outR) *outR = br;
+    if (outC) *outC = bc;
+    return br >= 0;
+}
+
+bool Game::HitBubble(float x, float y) const
+{
+    return HitBubbleCell(x, y, nullptr, nullptr);
 }
 
 void Game::AddGarbage(int count)
@@ -269,19 +345,22 @@ void Game::Update(float dt)
         Riser& r = m_risers[i];
         // Fast, in small steps, so it reads as an attack surge and cannot
         // tunnel past a bubble between frames.
-        float move = 800.0f * dt;
+        float move = 800.0f * m_riserSpeed * dt;
         bool landed = false;
+        int  hitR = -1, hitC = -1;
         while (move > 0.0f && !landed) {
             const float s = move < 6.0f ? move : 6.0f;
             move -= s;
             r.y -= s;
-            if ((r.y - kR <= kCeilY) || HitBubble(r.x, r.y)) landed = true;
+            if (r.y - kR <= kCeilY) landed = true;
+            else if (HitBubbleCell(r.x, r.y, &hitR, &hitC)) landed = true;
         }
         if (landed) {
             m_sc = r.color;
             m_state = AIM;
+            m_shotSpecial = kSpecialNone;
             spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
-            Land(r.x, r.y, false);
+            Land(r.x, r.y, false, hitR, hitC);
             m_risers[i] = m_risers.back();
             m_risers.pop_back();
             continue;
@@ -302,36 +381,115 @@ void Game::Update(float dt)
         if (m_sx > m_x0 + FieldW() - kR) { m_sx = m_x0 + FieldW() - kR; m_dirx = -m_dirx; }
 
         if (m_sy - kR <= kCeilY) { Land(m_sx, m_sy); return; }
-        if (HitBubble(m_sx, m_sy)) { Land(m_sx, m_sy); return; }
+        int hr = -1, hc = -1;
+        if (HitBubbleCell(m_sx, m_sy, &hr, &hc)) {
+            Land(m_sx, m_sy, true, hr, hc);
+            return;
+        }
     }
 }
 
-void Game::Land(float x, float y, bool fromShot)
+int Game::PrismColorAt(int r, int c) const
 {
-    int br = -1, bc = -1;
-    float best = 1e30f;
+    int nb[6][2];
+    const int nn = Neighbors(r, c, nb);
+    int cnt[kColors + 1] = {0};
+    int best = 0, bestCount = 0;
+    for (int i = 0; i < nn; ++i) {
+        const int v = m_cell[nb[i][0]][nb[i][1]];
+        if (v < 1 || v > kColors) continue;
+        ++cnt[v];
+        if (cnt[v] > bestCount || (cnt[v] == bestCount && v < best)) {
+            bestCount = cnt[v];
+            best = v;
+        }
+    }
+    return best;
+}
 
+void Game::Land(float x, float y, bool fromShot, int hitR, int hitC)
+{
+    const int special = m_shotSpecial;
+    m_shotSpecial = kSpecialNone;
+
+    // Bombs do not stick: they clear a small radius around the impact and then
+    // fall through the normal drop/ceiling bookkeeping.
+    if (special == kSpecialBomb) {
+        ExplodeAt(x, y, fromShot);
+        return;
+    }
+    if (special == kSpecialPrism)
+        spawnRing(x, y, 0xFF80D0FFu, 3.2f);
+    else if (special == kSpecialChameleon)
+        spawnRing(x, y, 0xFF80FF80u, 3.2f);
+
+    // Landing cell: the empty neighbour of the bubble we actually touched,
+    // on the same side as the impact. A global "nearest cell" search could
+    // pick a slot on the far side of that bubble (or further), which looked
+    // like the shot teleporting across the board.
+    int br = -1, bc = -1;
+
+    if (hitR >= 0) {
+        int nb[6][2];
+        const int nn = Neighbors(hitR, hitC, nb);
+        const float hx = XOf(hitR, hitC);
+        const float hy = YOfLive(hitR);
+        const float ix = x - hx, iy = y - hy;
+        float best = 1e30f;
+        for (int i = 0; i < nn; ++i) {
+            const int nr = nb[i][0], ncc = nb[i][1];
+            if (Cell(nr, ncc)) continue;
+            if (!IsAttachable(nr, ncc)) continue;
+            const float vx = XOf(nr, ncc) - hx;
+            const float vy = YOfLive(nr) - hy;
+            if (vx * ix + vy * iy <= 0.0f) continue;   // opposite side of host
+            const float dx = XOf(nr, ncc) - x;
+            const float dy = YOfLive(nr) - y;
+            const float d2 = dx * dx + dy * dy;
+            if (d2 < best) { best = d2; br = nr; bc = ncc; }
+        }
+    }
+
+    // Fallback (ceiling hit, cramped pocket, riser without contact): nearest
+    // attachable cell, then any free cell.
     for (int pass = 0; pass < 2 && br < 0; ++pass) {
+        float best = 1e30f;
         for (int r = 0; r <= m_rows && r < kMaxRows; ++r) {
             const int n = RowCount(r);
             for (int c = 0; c < n; ++c) {
                 if (m_cell[r][c]) continue;
                 if (pass == 0 && !IsAttachable(r, c)) continue;
                 const float dx = XOf(r, c) - x;
-                const float dy = YOf(r) - y;
+                const float dy = YOfLive(r) - y;
                 const float d2 = dx * dx + dy * dy;
                 if (d2 < best) { best = d2; br = r; bc = c; }
             }
         }
-        best = 1e30f;
     }
 
     if (br < 0) { m_state = LOSE; return; }
 
-    m_cell[br][bc] = (u8)m_sc;
+    int placed = m_sc;
+    if (special == kSpecialPrism) {
+        const int wild = PrismColorAt(br, bc);
+        if (wild > 0) placed = wild;
+    }
+
+    m_cell[br][bc] = (u8)placed;
     if (br + 1 > m_rows) m_rows = br + 1;
     m_state = AIM;
     m_sinceRes = 0.0f;
+
+    // Chameleon paints its six neighbours before the match check, turning a
+    // small cluster into a same-colour chain.
+    if (special == kSpecialChameleon) {
+        int nb[6][2];
+        const int nn = Neighbors(br, bc, nb);
+        for (int i = 0; i < nn; ++i) {
+            const int nr = nb[i][0], nc = nb[i][1];
+            if (m_cell[nr][nc]) m_cell[nr][nc] = (u8)m_sc;
+        }
+    }
 
     Resolve(br, bc);
 
@@ -340,11 +498,50 @@ void Game::Land(float x, float y, bool fromShot)
     if (m_state != LOSE && OverLine()) m_state = LOSE;
 }
 
+void Game::ExplodeAt(float x, float y, bool fromShot)
+{
+    const float rad = m_bombRadius * kD;
+    const float r2 = rad * rad;
+    int cleared = 0;
+
+    for (int r = 0; r < m_rows && r < kMaxRows; ++r) {
+        const int n = RowCount(r);
+        for (int c = 0; c < n; ++c) {
+            if (!m_cell[r][c]) continue;
+            const float dx = XOf(r, c) - x;
+            const float dy = YOfLive(r) - y;
+            if (dx * dx + dy * dy > r2) continue;
+            if (m_corrupt[r][c]) {
+                m_corrupt[r][c] = false;
+                ++m_corruptPopped;
+            }
+            SpawnPop(XOf(r, c), YOfLive(r), m_cell[r][c], 5);
+            m_cell[r][c] = 0;
+            ++cleared;
+        }
+    }
+
+    m_score += cleared * 10;
+    m_pops += cleared;
+    m_lastPops = cleared;
+    m_lastClear = cleared;
+    spawnRing(x, y, 0xFFFFD08Au, 3.0f);
+    m_state = AIM;
+    m_sinceRes = 0.0f;
+
+    DropFloating();
+
+    if (GridEmpty()) { m_state = WIN; return; }
+    if (fromShot) AdvanceCeiling();
+    if (m_state != LOSE && OverLine()) m_state = LOSE;
+}
+
 void Game::Resolve(int r, int c)
 {
     const int col = m_cell[r][c];
     if (!col) return;
     m_lastPops = 0;
+    m_lastClear = 0;
 
     bool seen[kMaxRows][kColsMax];
     memset(seen, 0, sizeof(seen));
@@ -374,8 +571,13 @@ void Game::Resolve(int r, int c)
 
     if (n < 3) return;
 
+    m_lastClear = n;
     for (int i = 0; i < n; ++i) {
         const int cr = list[i][0], cc = list[i][1];
+        if (m_corrupt[cr][cc]) {
+            m_corrupt[cr][cc] = false;
+            ++m_corruptPopped;
+        }
         SpawnPop(XOf(cr, cc), YOfLive(cr), m_cell[cr][cc], 5);
         m_cell[cr][cc] = 0;
     }
@@ -425,9 +627,14 @@ void Game::DropFloating()
             f.t = 0.0f;
             f.color = m_cell[r][c];
             m_fall.push_back(f);
+            if (m_corrupt[r][c]) {
+                m_corrupt[r][c] = false;
+                ++m_corruptPopped;
+            }
             m_cell[r][c] = 0;
             m_score += 20;
             ++m_drops;
+            ++m_lastClear;
         }
     }
 }
@@ -436,9 +643,12 @@ void Game::Descend()
 {
     if (m_rows + 1 > kMaxRows) { m_state = LOSE; return; }
 
-    for (int r = kMaxRows - 1; r >= 1; --r)
+    for (int r = kMaxRows - 1; r >= 1; --r) {
         memcpy(m_cell[r], m_cell[r - 1], sizeof(m_cell[0]));
+        memcpy(m_corrupt[r], m_corrupt[r - 1], sizeof(m_corrupt[0]));
+    }
     memset(m_cell[0], 0, sizeof(m_cell[0]));
+    memset(m_corrupt[0], 0, sizeof(m_corrupt[0]));
 
     m_shift ^= 1;
     ++m_rows;
@@ -452,13 +662,22 @@ void Game::Descend()
 
 void Game::AdvanceCeiling()
 {
+    // The row for this descent cycle is inserted *up front* and parked one
+    // row above the field (m_ceilRowIn), so it slides into view as the ceiling
+    // creeps down instead of popping in at the end of the cycle. It is a real
+    // grid row, so it collides and can be cleared while partly visible.
+    if (!m_ceilRowIn) {
+        if (m_rows + 1 > kMaxRows) { m_state = LOSE; return; }
+        Descend();
+        m_ceilRowIn = true;
+        ++m_descends;
+    }
+
     m_ceil += kRowH / (float)kRowEvery;
     if (m_ceil >= kRowH) {
         m_ceil -= kRowH;
-        Descend();
-        ++m_descends;
-        m_ceilAnim -= kRowH;
-        if (m_ceilAnim < 0.0f) m_ceilAnim = 0.0f;
+        m_ceilAnim -= kRowH;   // keep the visual offset continuous on wrap
+        m_ceilRowIn = false;
     }
 }
 
@@ -652,6 +871,142 @@ bool Game::SelfTest(char* msg, int cap)
             ok = false;
             snprintf(err, sizeof(err), "garbage did not stick (%d -> %d)",
                      before, BubblesLeft());
+        }
+    }
+
+    // corrupted bubble counted when matched
+    if (ok) {
+        Reset(17);
+        memset(m_cell, 0, sizeof(m_cell));
+        memset(m_corrupt, 0, sizeof(m_corrupt));
+        m_rows = 3; m_shift = 0; m_state = AIM; m_moves = 0;
+        m_cell[2][2] = 1;
+        m_cell[2][3] = 1;
+        m_corrupt[2][2] = true;
+        m_corruptTotal = 1;
+        m_corruptPopped = 0;
+        m_sc = 1;
+        Land(XOf(2, 4), YOf(2) + 3.0f);
+        if (CorruptPopped() != 1) {
+            ok = false;
+            snprintf(err, sizeof(err), "corrupt match not counted");
+        }
+    }
+
+    // corrupted bubble counted when its anchor is removed
+    if (ok) {
+        Reset(19);
+        memset(m_cell, 0, sizeof(m_cell));
+        memset(m_corrupt, 0, sizeof(m_corrupt));
+        m_rows = 4; m_shift = 0; m_state = AIM; m_moves = 0;
+        m_cell[2][2] = 2;
+        m_cell[2][3] = 2;
+        m_cell[3][3] = 3;
+        m_corrupt[3][3] = true;
+        m_corruptTotal = 1;
+        m_corruptPopped = 0;
+        m_sc = 2;
+        Land(XOf(2, 4), YOf(2) + 3.0f);
+        if (CorruptPopped() != 1) {
+            ok = false;
+            snprintf(err, sizeof(err), "corrupt drop not counted");
+        }
+    }
+
+    // bomb clears a local cluster and does not stick
+    if (ok) {
+        Reset(23);
+        memset(m_cell, 0, sizeof(m_cell));
+        memset(m_corrupt, 0, sizeof(m_corrupt));
+        m_rows = 3; m_shift = 0; m_state = AIM; m_moves = 0;
+        m_cell[0][3] = 1;
+        m_cell[1][3] = 2;
+        m_cell[1][4] = 3;
+        m_cell[2][3] = 4;
+        m_sc = 1;
+        m_shotSpecial = kSpecialBomb;
+        Land(XOf(1, 3), YOf(1) + 3.0f);
+        if (BubblesLeft() != 0) {
+            ok = false;
+            snprintf(err, sizeof(err), "bomb did not clear cluster");
+        }
+    }
+
+    // bomb-every mod lands on the expected shot
+    if (ok) {
+        Reset(29);
+        SetBombEvery(3);
+        m_moves = 2;
+        if (CurrentSpecial() != kSpecialBomb) {
+            ok = false;
+            snprintf(err, sizeof(err), "bomb-every current shot wrong");
+        }
+        m_moves = 1;
+        if (NextSpecial() != kSpecialBomb) {
+            ok = false;
+            snprintf(err, sizeof(err), "bomb-every next shot wrong");
+        }
+        SetBombEvery(0);
+    }
+
+    // prism adopts the neighbouring colour and completes the match
+    if (ok) {
+        Reset(31);
+        memset(m_cell, 0, sizeof(m_cell));
+        m_rows = 3; m_shift = 0; m_state = AIM; m_moves = 0;
+        m_cell[2][2] = 2;
+        m_cell[2][3] = 2;
+        m_sc = 1;
+        m_shotSpecial = kSpecialPrism;
+        Land(XOf(2, 4), YOf(2) + 3.0f);
+        if (Cell(2, 2) || Cell(2, 3) || Cell(2, 4)) {
+            ok = false;
+            snprintf(err, sizeof(err), "prism did not adopt matching colour");
+        }
+    }
+
+    // chameleon paints its neighbours and builds a chain
+    if (ok) {
+        Reset(37);
+        memset(m_cell, 0, sizeof(m_cell));
+        m_rows = 3; m_shift = 0; m_state = AIM; m_moves = 0;
+        m_cell[2][3] = 3;
+        m_cell[1][4] = 3;
+        m_sc = 1;
+        m_shotSpecial = kSpecialChameleon;
+        Land(XOf(2, 4), YOf(2) + 3.0f);
+        if (Cell(2, 3) || Cell(2, 4) || Cell(1, 4)) {
+            ok = false;
+            snprintf(err, sizeof(err), "chameleon did not paint a chain");
+        }
+    }
+
+    // scripted and repeating special shots
+    if (ok) {
+        Reset(41);
+        SetPrismAtMove(3);
+        m_moves = 3;
+        if (CurrentSpecial() != kSpecialPrism) {
+            ok = false;
+            snprintf(err, sizeof(err), "prism-at-move wrong");
+        }
+        SetChameleonAtMove(5);
+        m_moves = 5;
+        if (CurrentSpecial() != kSpecialChameleon) {
+            ok = false;
+            snprintf(err, sizeof(err), "chameleon-at-move wrong");
+        }
+        SetPrismEvery(5);
+        m_moves = 4;
+        if (CurrentSpecial() != kSpecialPrism) {
+            ok = false;
+            snprintf(err, sizeof(err), "prism-every wrong");
+        }
+        SetChameleonEvery(7);
+        m_moves = 6;
+        if (CurrentSpecial() != kSpecialChameleon) {
+            ok = false;
+            snprintf(err, sizeof(err), "chameleon-every wrong");
         }
     }
 
