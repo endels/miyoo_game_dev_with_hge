@@ -305,5 +305,10 @@ if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_host_tests.sh"
                     "$<TARGET_FILE:bubble_level1>"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/sim_5.txt")
+        # Same idea for --duel-sim: freezes default AI play across a seed range.
+        add_test(NAME bubble_duel_golden
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_duel_tests.sh"
+                    "$<TARGET_FILE:bubble_level1>"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/duel_default.txt")
     endif()
 endif()
