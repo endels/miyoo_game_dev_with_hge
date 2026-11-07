@@ -6,6 +6,7 @@
 #include "platform/plat.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -197,6 +198,14 @@ int Run(IGame& game, const RunConfig& cfg)
     int    frame = 0;
     bool   quit = false;
 
+    // HGE_FRAME_LOG=<ms>: report every frame slower than that budget.
+    const char* frameLogEnv = getenv("HGE_FRAME_LOG");
+    const double slowMs = frameLogEnv ? atof(frameLogEnv) : 0.0;
+    const bool  frameLog = slowMs > 0.0;
+    double prevIter = plat::Time();
+    int    slowCount = 0;
+    double slowWorst = 0.0;
+
     while (!quit) {
         Input in = pollInput();
 
@@ -227,6 +236,15 @@ int Run(IGame& game, const RunConfig& cfg)
             game.OnResize(iw, ih);
 
         const double nowWall = plat::Time();
+        if (frameLog) {
+            const double gap = nowWall - prevIter;
+            prevIter = nowWall;
+            if (gap * 1000.0 > slowMs) {
+                ++slowCount;
+                if (gap > slowWorst) slowWorst = gap;
+                fprintf(stderr, "[slow] f=%d gap=%.1fms\n", frame, gap * 1000.0);
+            }
+        }
         float dt = cfg.fixedDt > 0.0
                  ? (float)cfg.fixedDt
                  : (float)(nowWall - last);
@@ -270,6 +288,9 @@ int Run(IGame& game, const RunConfig& cfg)
     gfx->Shutdown();
     delete gfx;
     plat::Shutdown();
+    if (frameLog)
+        fprintf(stderr, "[slow] frames=%d slow=%d worst=%.1fms\n", frame, slowCount,
+                slowWorst * 1000.0);
     return 0;
 }
 
