@@ -732,7 +732,7 @@ void Game::ExplodeAt(float x, float y, bool fromShot)
     m_pops += cleared;
     m_lastPops = cleared;
     m_lastClear = cleared;
-    spawnRing(x, y, 0xFFFFD08Au, 3.0f);
+    spawnBlast(x, y, 0xFFFFB050u);
     m_state = AIM;
     m_sinceRes = 0.0f;
 
@@ -791,7 +791,7 @@ void Game::Resolve(int r, int c)
     m_score += n * 10;
     m_pops += n;
     m_lastPops = n;
-    spawnRing(XOf(r, c), YOfLive(r), 0xFFFFFFFFu, 2.2f);
+    spawnBlast(XOf(r, c), YOfLive(r), 0xFFFFD08Au);
 
     DropFloating();
 }
@@ -864,7 +864,9 @@ void Game::Descend()
     for (int c = 0; c < n; ++c)
         m_cell[0][c] = (u8)(1 + (int)(Rand() % (u32)m_colors));
 
-    spawnRing(m_x0 + FieldW() * 0.5f, kCeilY + 6.0f, 0xFF8090FFu, 6.0f);
+    // No ring here any more: one going off above the board read as a blast
+    // detonating far from the clear that had just started it. The new row is
+    // already visible sliding in, so the descent needs no extra mark.
 }
 
 void Game::AdvanceCeiling()
@@ -929,17 +931,23 @@ void Game::SpawnPop(float x, float y, int color, int count)
     }
 }
 
-void Game::spawnRing(float x, float y, u32 color, float scale)
+void Game::spawnRing(float x, float y, u32 color, float scale, float life)
 {
     Particle p;
     p.x = x; p.y = y;
     p.vx = 0; p.vy = 0;
     p.t = 0.0f;
-    p.life = 0.28f;
+    p.life = life;
     p.scale = scale;
     p.kind = 1;
     p.color = color;
     m_parts.push_back(p);
+}
+
+void Game::spawnBlast(float x, float y, u32 outer)
+{
+    spawnRing(x, y, 0xFFFFFFFFu, 2.0f, 0.24f);
+    spawnRing(x, y, outer, 3.6f, 0.38f);
 }
 
 bool Game::SelfTest(char* msg, int cap)

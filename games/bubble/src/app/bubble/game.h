@@ -250,7 +250,10 @@ private:
     int  PushGarbage(const int* cols, int count);
     void PickGarbageColumns(int target, int count, int* out);
     void SpawnPop(float x, float y, int color, int count);
-    void spawnRing(float x, float y, u32 color, float scale);
+    void spawnRing(float x, float y, u32 color, float scale, float life = 0.28f);
+    // White core plus a wider ring, both centred on the same point, so a clear
+    // or a bomb reads as one blast instead of a lone ring drifting away.
+    void spawnBlast(float x, float y, u32 outer);
 
     u8  m_cell[kMaxRows][kColsMax];
     bool m_corrupt[kMaxRows][kColsMax];
