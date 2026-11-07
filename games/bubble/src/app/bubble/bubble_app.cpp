@@ -253,7 +253,6 @@ void BubbleApp::startStage(int stage, bool showBrief)
         m_duelAtk[0] = m_duelAtk[1] = 0;
         m_duelAtkCol[0] = m_duelAtkCol[1] = -1;
         m_duelAtkTimer = 0.0f;
-        m_duelShotCd = 0.0f;
         m_banner = nullptr;
         m_bannerTimer = 0.0f;
         m_phase = Phase::PLAY;
@@ -715,7 +714,6 @@ void BubbleApp::driveAutoplay(float dt, hge::Input& in)
 void BubbleApp::updateDuel(float dt, const hge::Input& in)
 {
     if (m_duelAtkTimer > 0.0f) m_duelAtkTimer -= dt;
-    if (m_duelShotCd > 0.0f) m_duelShotCd -= dt;
 
     // A click on the CPU dino is the difficulty dial, not a shot.
     const bool dial = dialClick(in);
@@ -727,21 +725,10 @@ void BubbleApp::updateDuel(float dt, const hge::Input& in)
     if (in.aimLeft)  m_match.AimBy(-aimRate * dt);
     if (in.aimRight) m_match.AimBy(aimRate * dt);
 
-    // No click is ever thrown away while the turn is still playable. If the
-    // board is not ready this frame (the player's own bubble is still in the
-    // air, or the hand-over banner is running) the intent is held and fired
-    // the instant it can be, so a click never reads as "the game ignored me".
-    const bool myTurn       = (m_match.Turn() == 0);
-    const bool handoverMine = (m_match.Turn() == 1 && m_match.ShotsLeft() == 0);
-    if (in.firePressed && !dial && (myTurn || handoverMine)) m_duelFireWant = true;
-    if (!myTurn && !handoverMine) m_duelFireWant = false;   // CPU is shooting
-
-    if (m_duelFireWant && !dial && m_duelShotCd <= 0.0f) {
-        if (m_match.Fire()) {
-            m_duelShotCd = 0.12f;   // T8: no accidental double fire
-            m_duelFireWant = false;
-        }
-    }
+    // A click is a shot attempt, never a stored intent. Fire() and the HUD both
+    // read CanPlayerFire(), so if a click is ignored the HUD is already showing
+    // IN FLIGHT or CPU SHOT (or 0/N on the last-shot tail).
+    if (in.firePressed && !dial) m_match.Fire();
 
     m_match.Tick(dt, m_opt.autoplay);
 
@@ -819,7 +806,6 @@ void BubbleApp::rematchDuel()
     m_duelAtk[0] = m_duelAtk[1] = 0;
     m_duelAtkCol[0] = m_duelAtkCol[1] = -1;
     m_duelAtkTimer = 0.0f;
-    m_duelShotCd = 0.0f;
     m_banner = nullptr;
     m_bannerTimer = 0.0f;
     m_corruptFlash = 0.0f;
@@ -1105,7 +1091,7 @@ void BubbleApp::Render(IGfx* /*gfx*/, double time)
         hud.duelResult = m_duelResult;
         hud.duelShots = m_match.GlobalShots();
         hud.duelMaxAtk = m_match.MaxAttack(0);
-        hud.pass = m_match.SubPhase() != kDuelShooting;
+        hud.duelHud = m_match.PlayerHudState();
         hud.canRetry = false;
     }
     hud.banner = m_banner;

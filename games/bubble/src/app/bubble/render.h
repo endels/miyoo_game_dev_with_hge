@@ -4,6 +4,7 @@
 #include "hge_gfx.h"
 #include "hge_resource.h"
 #include "app/bubble/battle.h"
+#include "app/bubble/duel.h"
 
 #include <string>
 
@@ -40,7 +41,7 @@ struct HudState {
     int   depthMax = 13;
     int   turn = 0;
     int   shotsLeft = 0;
-    int   shotsMax = 5;
+    int   shotsMax = 0;
     int   nextDescendIn = 0;            // shots until the next descend
     int   attackOut[2] = { 0, 0 };      // last attack sent by each side
     int   attackCol[2] = { -1, -1 };    // target column of that attack
@@ -48,10 +49,12 @@ struct HudState {
     int   duelResult = 0;               // 0 running, 1 win, 2 lose, 3 draw
     int   duelShots = 0;                // global shots played
     int   duelMaxAtk = 0;
+    // Three-state centre column, computed by DuelMatch::PlayerHudState().
+    // The renderer must switch on this instead of inspecting turn/flying.
+    DuelHudState duelHud = kDuelHudYourShot;
     // CPU difficulty dial: the level, and how long the floating number is due.
     int   aiLevel = 0;                  // 1..kAiLevels, 0 = do not show
     float aiLevelFlash = 0.0f;          // seconds left
-    bool  pass = false;                 // hand-over / turn-start: no firing
 };
 
 struct RenderCtx {

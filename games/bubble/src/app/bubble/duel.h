@@ -19,7 +19,6 @@ namespace bbl {
 // Every number below is a design §5.2 parameter; keep this list as the single
 // place where the rules are tuned.
 const int   kShotsPerTurn       = 5;      // T1
-const float kHandoverSec        = 0.00f;  // T2: phase placeholder, no timed wait
 const int   kDescendEveryShots  = 4;      // T3
 const int   kDescendFast1Shots  = 3;      // T4 (global >= kSuddenDeath1Shots)
 const int   kDescendFast2Shots  = 2;      // T5 (global >= kSuddenDeath2Shots)
@@ -29,9 +28,8 @@ const int   kMaxGlobalShots     = 300;    // T6: hard stop -> DRAW
 const int   kAttackCapPerShot   = 8;      // A7
 const int   kClearBoardBonus    = 6;      // A7.1
 const int   kDepthMax           = 13;     // DepthRows() >= this = over the line
-const float kTurnStartSec       = 0.00f;  // TURN_START placeholder, no freeze
-const float kHandoverStallSec   = 3.0f;   // watchdog: force risers after this
 const float kAIStartDelay       = 0.30f;  // T7
+const float kHandoverStallSec   = 3.0f;   // watchdog: force risers after this
 // AI2 (the CPU shot interval) is per difficulty level; see aiLevelInfo().
 const int   kDuelCols           = 10;
 
@@ -65,10 +63,17 @@ enum DuelResult {
 };
 
 enum DuelSubPhase {
-    kDuelTurnStart = 0,
-    kDuelShooting,
-    kDuelHandover,
+    kDuelPlay = 0,
     kDuelOver
+};
+
+// The only three states the duel HUD may show. PlayerHudState() returns one
+// of these; the renderer must switch on it instead of testing turn/flying/sub
+// phase itself, so the gate and the label can never disagree.
+enum DuelHudState {
+    kDuelHudYourShot = 0,
+    kDuelHudInFlight,
+    kDuelHudCpuShot
 };
 
 // One settled shot, for the [shot] dump line and for the stats screen.
@@ -98,6 +103,12 @@ public:
     void AimBy(float deltaRad);
     bool Fire();
 
+    // The single gate used by both Fire() and the HUD three-state below.
+    // True only when the match is running, it is the player's turn, the player
+    // still has shots, and the player's board is at rest (AIM).
+    bool CanPlayerFire() const;
+    DuelHudState PlayerHudState() const;
+
     // CPU difficulty dial (battle.h). Applies at once and survives rematches;
     // no rule value depends on it.
     void SetAiLevel(int level);
@@ -107,7 +118,6 @@ public:
     int  Turn() const           { return m_turn; }
     int  ShotsLeft() const      { return m_shotsLeft; }
     int  ShotsPerTurn() const   { return kShotsPerTurn; }
-    int  SubPhase() const       { return m_sub; }
     int  GlobalShots() const    { return m_globalShots; }
     int  Result() const         { return m_result; }
     int  Depth(int side) const  { return m_depth[side]; }
@@ -139,8 +149,8 @@ private:
     int  m_aiLevel = kAiLevelDefault;
     int  m_turn = 0;
     int  m_shotsLeft = kShotsPerTurn;
-    int  m_sub = kDuelTurnStart;
-    float m_timer = 0.0f;
+    int  m_sub = kDuelPlay;
+    bool m_handoverPending = false;
     float m_handoverStall = 0.0f;
     int  m_result = kDuelRunning;
     int  m_globalShots = 0;

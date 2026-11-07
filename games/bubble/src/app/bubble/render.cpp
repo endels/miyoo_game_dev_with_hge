@@ -603,24 +603,39 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     if (hud.phase == 0 && hud.duel) {
         const float cx = kCenterX + kCenterW * 0.5f;
 
-        // ---- whose turn. Turn-start / hand-over print PASS so a player never
-        // reads "YOUR TURN" while the fire button is swallowed.
-        if (hud.pass) {
-            centreText(c, cx, 6, "PASS", 1.0f, 0xFF9FB3CE);
-        } else {
-            centreText(c, cx, 6, hud.turn == 0 ? "YOUR TURN" : "CPU TURN", 1.0f,
-                       hud.turn == 0 ? 0xFFFFD24A : 0xFF6FA8FF);
+        // ---- three-state turn label. The state comes from
+        // DuelMatch::PlayerHudState(); this block never tests turn/flying.
+        const u32 yourCol = 0xFFFFD24A;
+        const u32 cpuCol  = 0xFF6FA8FF;
+        const u32 idleCol = 0xFF9FB3CE;
+        u32 stateCol = yourCol;
+        const char* stateTxt = "YOUR SHOT";
+        if (hud.duelHud == kDuelHudCpuShot) {
+            stateCol = cpuCol;
+            stateTxt = "CPU SHOT";
+        } else if (hud.duelHud == kDuelHudInFlight) {
+            stateCol = idleCol;
+            stateTxt = "IN FLIGHT";
+        }
+        centreText(c, cx, 5, stateTxt, 1.0f, stateCol);
+
+        // The shot counter is the second line, centred under the label. IN
+        // FLIGHT deliberately has no counter line (the shot is already spent).
+        if (hud.duelHud != kDuelHudInFlight) {
+            char shots[16];
+            snprintf(shots, sizeof(shots), "%d/%d", hud.shotsLeft, hud.shotsMax);
+            const u32 chip = (hud.duelHud == kDuelHudCpuShot) ? 0x336FA8FF
+                                                              : 0x33FFD24A;
+            quad(g, nullptr, 452, 31, 56, 28, chip);
+            centreText(c, cx, 33, shots, 1.0f, stateCol);
         }
 
         // ---- two 13-cell depth bars: the only survival readout
         const float barW = 52.0f, pitch = 15.0f, cellH = 13.0f;
-        const float barTopY = 64.0f;
+        const float barTopY = 68.0f;
         const float barH = pitch * (float)hud.depthMax;
         const float barX[2] = { 424.0f, 484.0f };
         const u32 sideCol[2] = { 0xFFFFD24A, 0xFF6FA8FF };
-
-        centreText(c, barX[0] + barW * 0.5f, 34, "YOU", 1.0f, sideCol[0]);
-        centreText(c, barX[1] + barW * 0.5f, 34, "CPU", 1.0f, sideCol[1]);
 
         for (int i = 0; i < 2; ++i) {
             // frame
@@ -637,23 +652,25 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
             quad(g, nullptr, barX[i] - 3, barTopY - 4, barW + 6, 3, 0xFFE05050);
         }
 
-        // ---- shots left: one dot each, dimmed as they are spent
-        const float dotW = 12.0f, dotGap = 6.0f;
-        int shotsMax = hud.shotsMax > 0 ? hud.shotsMax : 5;
-        if (shotsMax > 6) shotsMax = 6;
+        // ---- shots left: one dot each, dimmed as they are spent. Count is
+        // derived from ShotsPerTurn() (HudState), never hard-coded.
+        const float dotW = 14.0f, dotGap = 8.0f;
+        int shotsMax = hud.shotsMax;
+        if (shotsMax < 1) shotsMax = 1;
         const float dotsW = (float)shotsMax * dotW + (float)(shotsMax - 1) * dotGap;
         const float dx0 = cx - dotsW * 0.5f;
         const float dotY = barTopY + barH + 12.0f;
+        const u32 dotOn = (hud.duelHud == kDuelHudCpuShot) ? cpuCol : yourCol;
         for (int k = 0; k < shotsMax; ++k) {
             const bool on = k < hud.shotsLeft;
             quad(g, nullptr, dx0 + (float)k * (dotW + dotGap), dotY, dotW, dotW,
-                 on ? sideCol[hud.turn & 1] : 0x405A6A82);
+                 on ? dotOn : 0xFF4E6480);
         }
 
         // ---- time pressure: shots until the ceiling drops one row
         char buf[32];
         snprintf(buf, sizeof(buf), "DESC %d", hud.nextDescendIn);
-        centreText(c, cx, dotY + 22.0f, buf, 1.0f,
+        centreText(c, cx, 299, buf, 1.0f,
                    hud.nextDescendIn <= 1 ? 0xFFFF9A6A : 0xFF8FA6C4);
 
         // ---- attack readout: what this side just sent, and where it landed
@@ -663,10 +680,10 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
             if (k > 1.0f) k = 1.0f;
             const u32 a = (u32)(255.0f * k);
             snprintf(buf, sizeof(buf), "+%d", hud.attackOut[src]);
-            centreText(c, cx, dotY + 46.0f, buf, 2.0f, (a << 24) | 0x00FFE08A);
+            centreText(c, cx, 325, buf, 2.0f, (a << 24) | 0x00FFE08A);
             if (hud.attackCol[src] >= 0) {
                 snprintf(buf, sizeof(buf), "COL %d", hud.attackCol[src] + 1);
-                centreText(c, cx, dotY + 78.0f, buf, 1.0f, (a << 24) | 0x009FB3CE);
+                centreText(c, cx, 383, buf, 1.0f, (a << 24) | 0x009FB3CE);
             }
         }
 
@@ -678,13 +695,9 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
                 const float p = 0.5f + 0.5f * sinf((float)time * 11.0f);
                 const u32 a = (u32)(150.0f + 105.0f * p);
                 snprintf(buf, sizeof(buf), "INCOMING %d", inc);
-                centreText(c, cx, 372, buf, 1.0f, (a << 24) | 0x00FF7A5A);
+                centreText(c, cx, 415, buf, 1.0f, (a << 24) | 0x00FF7A5A);
             }
         }
-
-        // ---- one-time rule line, then it is gone for good
-        if (hud.duelShots == 0)
-            centreText(c, cx, 470, "5 SHOTS EACH", 1.0f, 0xFF8FA6C4);
     } else if (hud.phase == 0) {
     {
         char stageBuf[24];

@@ -63,8 +63,8 @@ void DuelMatch::Reset(u32 seed)
 
     m_turn = 0;
     m_shotsLeft = kShotsPerTurn;
-    m_sub = kDuelTurnStart;
-    m_timer = kTurnStartSec;
+    m_sub = kDuelPlay;
+    m_handoverPending = false;
     m_handoverStall = 0.0f;
     m_result = kDuelRunning;
     m_globalShots = 0;
@@ -99,8 +99,8 @@ void DuelMatch::beginTurn(int side)
 {
     m_turn = side;
     m_shotsLeft = kShotsPerTurn;
-    m_sub = kDuelTurnStart;
-    m_timer = kTurnStartSec;
+    m_sub = kDuelPlay;
+    m_handoverPending = false;
     m_handoverStall = 0.0f;
     m_turnShotIdx = 0;
 
@@ -114,6 +114,27 @@ void DuelMatch::beginTurn(int side)
     // for both sides; keeping it table-driven leaves level 3 bit-identical).
     s.aiFocusW = aiLevelInfo(s.aiLevel).focusW;
     setRowEvery();
+}
+
+bool DuelMatch::CanPlayerFire() const
+{
+    return m_result == kDuelRunning &&
+           m_turn == 0 &&
+           m_shotsLeft > 0 &&
+           m_sides[0].game.GetState() == Game::AIM;
+}
+
+DuelHudState DuelMatch::PlayerHudState() const
+{
+    // The renderer only sees this enum; it must never test turn/flying itself.
+    // CanPlayerFire() is the first check so the HUD and the fire gate cannot
+    // disagree while the player still has shots.
+    if (m_turn != 0) return kDuelHudCpuShot;
+    if (CanPlayerFire()) return kDuelHudYourShot;
+    if (m_sides[0].game.IsFlying() || m_shotOpen[0]) return kDuelHudInFlight;
+    // Player's turn with 0 shots left and no shot in the air: the per-shot
+    // HUD must show 0/N instead of a fake "IN FLIGHT" while the boards settle.
+    return kDuelHudYourShot;
 }
 
 bool DuelMatch::readyToHandOver() const
@@ -186,22 +207,9 @@ void DuelMatch::AimBy(float deltaRad)
 
 bool DuelMatch::Fire()
 {
-    if (m_result != kDuelRunning) return false;
-    // A click is never a dead input while the turn can still be played:
-    //   * kDuelShooting on the player's turn: fire now.
-    //   * kDuelTurnStart: the banner is a zero-length placeholder, so an
-    //     explicit fire just skips the remaining frame of it.
-    // A click during kDuelHandover stays queued in BubbleApp (m_duelFireWant)
-    // and fires as soon as the automatic hand-over begins the player's turn.
-    if (m_sub == kDuelTurnStart) {
-        if (m_turn != 0) return false;
-        m_sub = kDuelShooting;
-        m_timer = 0.0f;
-    }
-    if (m_sub != kDuelShooting) return false;
-    if (m_turn != 0) return false;
-    if (m_sides[0].game.GetState() != Game::AIM) return false;
-    if (m_shotsLeft <= 0) return false;
+    // The only gate: running / player's turn / board at rest / shots left.
+    // No phase switches and no "keep the click for later" here.
+    if (!CanPlayerFire()) return false;
 
     m_sides[0].game.Fire();
     m_shotOpen[0] = true;
@@ -323,97 +331,71 @@ void DuelMatch::Tick(float dt, bool playerBot)
     checkOver();
     if (m_result != kDuelRunning) return;
 
-    // T2 step 1+2: the banner phases are placeholders, not pauses. Both boards
-    // keep running the full game update (Game::Update also advances particles
-    // via TickCosmetic and lands garbage via UpdateGarbage), so clears, drops
-    // and incoming attacks finish while the turn label is up. Only shooting/AI
-    // input is gated by the phase.
-    if (m_sub == kDuelTurnStart || m_sub == kDuelHandover) {
-        m_sides[0].game.Update(dt);
-        m_sides[1].game.Update(dt);
+    if (m_sub != kDuelPlay) return;
+
+    // The bot may act only while its turn still has shots and no hand-over is
+    // waiting for garbage to land.
+    if (!m_handoverPending && (m_turn == 1 || playerBot) &&
+        !m_shotOpen[m_turn] && m_shotsLeft > 0) {
+        Side& s = m_sides[m_turn];
+        if (s.game.GetState() == Game::AIM) {
+            const int movesBefore = s.game.Moves();
+            aiUpdate(s, dt);
+            if (s.game.Moves() != movesBefore) {
+                // The bot fired: open the same settlement window a human shot
+                // would have opened.
+                m_shotOpen[m_turn] = true;
+                m_basePops[m_turn] = s.game.Pops();
+                m_baseDrops[m_turn] = s.game.Drops();
+                --m_shotsLeft;
+            }
+        }
     }
 
-    switch (m_sub) {
-    case kDuelTurnStart:
-        // Zero-length placeholder: the boards are already running above.
-        m_timer -= dt;
-        if (m_timer <= 0.0f) {
-            m_sub = kDuelShooting;
-            m_timer = 0.0f;
-        }
-        break;
+    // Both boards always run the full update in the single play phase. This
+    // also advances the particles and lands incoming garbage while a turn is
+    // waiting to hand over.
+    m_sides[0].game.Update(dt);
+    m_sides[1].game.Update(dt);
 
-    case kDuelHandover:
-        // Step 2: hand over as soon as both boards are at rest (no shot in the
-        // air, no garbage still rising). There is no fixed 0.5 s wait.
+    // Close the settlement window once the shot has come to rest.
+    for (int i = 0; i < 2; ++i) {
+        if (!m_shotOpen[i]) continue;
+        if (m_sides[i].game.IsFlying()) continue;
+        const Game::State st = m_sides[i].game.GetState();
+        if (st != Game::AIM && st != Game::WIN) continue;
+        settleShot(i);
+        if (m_result != kDuelRunning) return;
+    }
+
+    // Hand over as soon as the last shot is settled and both boards are at
+    // rest (no shot in the air, no garbage still rising). There is no banner
+    // phase and no fixed delay; the wait is only the boards settling.
+    if (m_shotsLeft <= 0 && !m_shotOpen[0] && !m_shotOpen[1]) {
         if (readyToHandOver()) {
+            m_handoverPending = false;
             beginTurn(1 - m_turn);
-            break;
-        }
-        m_handoverStall += dt;
-        if (m_handoverStall >= kHandoverStallSec) {
-            const int r0 = (int)m_sides[0].game.Risers().size();
-            const int r1 = (int)m_sides[1].game.Risers().size();
-            flushRisers();
-            fprintf(stderr,
-                    "[duel] handover stall %.2fs risers=%d,%d flying=%d,%d "
-                    "after_flush=%d,%d\n",
-                    m_handoverStall, r0, r1,
-                    (int)m_sides[0].game.IsFlying(), (int)m_sides[1].game.IsFlying(),
-                    (int)m_sides[0].game.Risers().size(),
-                    (int)m_sides[1].game.Risers().size());
-            beginTurn(1 - m_turn);
-        }
-        break;
-
-    case kDuelShooting: {
-        if ((m_turn == 1 || playerBot) && !m_shotOpen[m_turn] && m_shotsLeft > 0) {
-            Side& s = m_sides[m_turn];
-            if (s.game.GetState() == Game::AIM) {
-                const int movesBefore = s.game.Moves();
-                aiUpdate(s, dt);
-                if (s.game.Moves() != movesBefore) {
-                    // The bot fired: open the same settlement window a human
-                    // shot would have opened.
-                    m_shotOpen[m_turn] = true;
-                    m_basePops[m_turn] = s.game.Pops();
-                    m_baseDrops[m_turn] = s.game.Drops();
-                    --m_shotsLeft;
-                }
-            }
-        }
-
-        m_sides[0].game.Update(dt);
-        m_sides[1].game.Update(dt);
-
-        // Close the settlement window once the shot has come to rest.
-        for (int i = 0; i < 2; ++i) {
-            if (!m_shotOpen[i]) continue;
-            if (m_sides[i].game.IsFlying()) continue;
-            const Game::State st = m_sides[i].game.GetState();
-            if (st != Game::AIM && st != Game::WIN) continue;
-            settleShot(i);
-            if (m_result != kDuelRunning) return;
-        }
-
-        // Step 2: once the last shot is settled, wait only for both boards to
-        // come to rest (including garbage). If they already are, the next turn
-        // starts in this same frame; otherwise the zero-length Handover phase
-        // is a placeholder that keeps updating both boards above.
-        if (m_shotsLeft <= 0 && !m_shotOpen[0] && !m_shotOpen[1] &&
-            m_sub == kDuelShooting) {
-            if (readyToHandOver()) {
+        } else if (!m_handoverPending) {
+            m_handoverPending = true;
+            m_handoverStall = 0.0f;
+        } else {
+            m_handoverStall += dt;
+            if (m_handoverStall >= kHandoverStallSec) {
+                const int r0 = (int)m_sides[0].game.Risers().size();
+                const int r1 = (int)m_sides[1].game.Risers().size();
+                flushRisers();
+                fprintf(stderr,
+                        "[duel] handover stall %.2fs risers=%d,%d flying=%d,%d "
+                        "after_flush=%d,%d\n",
+                        m_handoverStall, r0, r1,
+                        (int)m_sides[0].game.IsFlying(),
+                        (int)m_sides[1].game.IsFlying(),
+                        (int)m_sides[0].game.Risers().size(),
+                        (int)m_sides[1].game.Risers().size());
+                m_handoverPending = false;
                 beginTurn(1 - m_turn);
-            } else {
-                m_sub = kDuelHandover;
-                m_handoverStall = kHandoverSec;     // zero, placeholder start
             }
         }
-        break;
-    }
-
-    default:
-        break;
     }
 
     // Garbage can finish a board off between shots. A board left in WIN with
