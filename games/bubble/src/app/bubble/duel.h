@@ -88,6 +88,10 @@ struct DuelShotLog {
     int targetCol;
     int depth0;
     int depth1;
+    int deepCol;
+    int aimCol;
+    float t;        // launch time, seconds
+    float aimMs;    // planning time before the shot, ms
 };
 
 class DuelMatch {
@@ -130,6 +134,8 @@ public:
     // think window (or when it is not the CPU's turn).
     int   CpuAimCol() const;
     float CpuThinkLeft() const;
+    int  AiBlunders() const { return m_sides[0].aiBlunders + m_sides[1].aiBlunders; }
+    int  AiShots() const { return m_sides[0].aiShots + m_sides[1].aiShots; }
     int  GlobalShots() const    { return m_globalShots; }
     int  Result() const         { return m_result; }
     int  Depth(int side) const  { return m_depth[side]; }
@@ -188,6 +194,10 @@ private:
     u32  m_garbageRng = 1;
     // Rounds started (player + CPU = one). Reported as `turns=` by --duel-sim.
     int  m_turnCount = 1;
+    float m_clock = 0.0f;
+    float m_planTime[2] = { 0.0f, 0.0f };
+    float m_launchTime[2] = { 0.0f, 0.0f };
+    float m_aimMs[2] = { 0.0f, 0.0f };
 
     std::vector<DuelShotLog> m_log;
 };

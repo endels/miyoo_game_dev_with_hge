@@ -73,11 +73,11 @@ const AiLevelInfo& aiLevelInfo(int level)
 {
     static const AiLevelInfo kTable[kAiLevels] = {
         // name      jitter simN wDrop focus  wSelf self blunder bounce pace
-        { "EASY",     40.0f,  0,    0, 0.00f, 0.0f, 0, 0.35f, 0.00f, 1.60f },
-        { "CASUAL",   45.0f,  0,    0, 0.00f, 0.0f, 0, 0.20f, 0.25f, 1.30f },
+        { "EASY",     45.0f,  0,    0, 0.00f, 0.0f, 0, 0.35f, 0.00f, 1.60f },
+        { "CASUAL",   35.0f,  0,    0, 0.00f, 0.0f, 0, 0.20f, 0.25f, 1.30f },
         { "NORMAL",   16.0f,  0,    0, 0.00f, 0.0f, 0, 0.00f, 0.00f, 1.00f },
-        { "SHARP",    10.0f,  8,   90, 0.55f, 1.2f, 8, 0.00f, 0.85f, 0.75f },
-        { "MASTER",    2.0f, 18,  110, 0.85f, 1.6f, 7, 0.00f, 1.00f, 0.55f },
+        { "SHARP",     8.0f, 10,   90, 0.55f, 1.2f, 8, 0.00f, 0.85f, 0.75f },
+        { "MASTER",    2.0f, 12,  110, 0.85f, 1.6f, 7, 0.00f, 1.00f, 0.55f },
     };
     return kTable[aiClampLevel(level) - 1];
 }
@@ -111,11 +111,15 @@ void resetBattle(Side s[2])
         s[i].aiTimer = 1.2f;
         s[i].aiPlanned = false;
         s[i].aiAimCol = -1;
+        s[i].aiLastAimCol = -1;
         s[i].aiFallbackShot = false;
         s[i].aiCandCount = 0;
         s[i].aiTopCount = 0;
+        s[i].aiShortCount = 0;
         s[i].aiSimCursor = 0;
         s[i].aiHaveChoice = false;
+        s[i].aiBlunders = 0;
+        s[i].aiShots = 0;
         s[i].aiChosenR = -1;
         s[i].aiChosenC = -1;
         s[i].lastPops = s[i].game.Pops();
@@ -134,6 +138,7 @@ void resetBattle(Side s[2])
         s[i].chainPay = false;
         s[i].duelMode = false;
         s[i].aiFocusCol = -1;
+        s[i].aiDeepCol = -1;
         aiApplyLevel(s[i], kAiLevelDefault);
         // Stage shipped with jitter 14; duel's NORMAL is 12. Keep the stage
         // stream bit-identical (--sim-only checksum).
@@ -342,9 +347,10 @@ static int estimatedDrops(const Game& g, int r, int c, int color)
 static void aiStepDuel(Side& s)
 {
     if (s.aiSimN <= 0 || !s.aiHaveChoice) return;
-    if (s.aiSimCursor >= s.aiTopCount) return;
+    if (s.aiSimCursor >= s.aiShortCount) return;
 
-    const int idx = s.aiTopIdx[s.aiSimCursor++];
+    const int slot = s.aiSimCursor++;
+    const int idx = s.aiShortIdx[slot];
     const int r = s.aiCandR[idx];
     const int c = s.aiCandC[idx];
     const float tx = s.game.XOf(r, c) + s.aiJitterDx;
@@ -352,15 +358,19 @@ static void aiStepDuel(Side& s)
 
     SimShot sim;
     replayShot(s.game, tx, ty, sim);
-    if (sim.lost) return;
+    if (sim.lost) {
+        s.aiSimScore[slot] = -1000000;
+        s.aiSimLand[slot] = -1;
+        return;
+    }
 
     float v = 100.0f * (float)sim.pops + (float)(s.aiWDrop * sim.drops);
-    if (s.aiFocusCol >= 0 && sim.landCol == s.aiFocusCol)
-        v += s.aiFocusW * 120.0f;
     if (s.aiWSelf > 0.0f && s.aiDepthBefore >= s.aiSelfDepth) {
         const int rescued = s.aiDepthBefore - sim.depthAfter;
         if (rescued > 0) v += s.aiWSelf * 80.0f * (float)rescued;
     }
+    s.aiSimScore[slot] = (int)v;
+    s.aiSimLand[slot] = sim.landCol >= 0 ? sim.landCol : c;
 
     if (v > s.aiSimBest) {
         s.aiSimBest = v;
@@ -371,6 +381,39 @@ static void aiStepDuel(Side& s)
         s.aiAimCol = sim.landCol >= 0 ? sim.landCol : c;
         s.game.AimAt(tx, ty);
     }
+}
+
+// Near-optimal set -> hard preference for the focus column. This is a tier
+// break, not another additive term: a candidate 1 pop worse (<=150 points)
+// still wins if it actually lands in the opponent's deepest column.
+static void aiFinishDuel(Side& s)
+{
+    if (s.aiSimN <= 0 || s.aiShortCount <= 0) return;
+    int best = -1000000;
+    for (int i = 0; i < s.aiShortCount; ++i)
+        if (s.aiSimScore[i] > best) best = s.aiSimScore[i];
+    if (best <= -999999) return;
+
+    int pick = -1;
+    for (int pass = 0; pass < 3 && pick < 0; ++pass) {
+        for (int i = 0; i < s.aiShortCount; ++i) {
+            if (s.aiSimScore[i] < best - 150) continue;
+            const int land = s.aiSimLand[i];
+            if (land < 0) continue;
+            if (pass == 0 && s.aiFocusCol >= 0 && land == s.aiFocusCol) pick = i;
+            if (pass == 1 && s.aiFocusCol >= 0 && abs(land - s.aiFocusCol) == 1) pick = i;
+            if (pass == 2) pick = i;
+            if (pick >= 0) break;
+        }
+    }
+    if (pick < 0) return;
+    const int idx = s.aiShortIdx[pick];
+    s.aiChosenR = s.aiCandR[idx];
+    s.aiChosenC = s.aiCandC[idx];
+    s.aiChosenX = s.game.XOf(s.aiChosenR, s.aiChosenC) + s.aiJitterDx;
+    s.aiChosenY = Game::YOf(s.aiChosenR);
+    s.aiAimCol = s.aiSimLand[pick];
+    s.game.AimAt(s.aiChosenX, s.aiChosenY);
 }
 
 bool aiPlan(Side& s)
@@ -396,6 +439,9 @@ bool aiPlan(Side& s)
 
     const int want = s.game.CurrentColor();
     const int topNeed = s.aiSimN > 0 ? s.aiSimN : 4;
+    int bestFocus = -1, bestMatch = -1, bestDrop = -1, bestSelf = -1;
+    int bestFocusScore = -1000000, bestMatchScore = -1000000;
+    int bestDropEst = -1, bestSelfRow = -1;
     for (int r = 0; r <= s.game.RowsUsed() && r < kMaxRows; ++r) {
         const int n = s.game.RowCount(r);
         for (int c = 0; c < n; ++c) {
@@ -418,6 +464,22 @@ bool aiPlan(Side& s)
                 s.aiCandR[i] = r;
                 s.aiCandC[i] = c;
                 s.aiCandV0[i] = score;
+                if (focusCol >= 0 && c == focusCol && score > bestFocusScore) {
+                    bestFocusScore = score;
+                    bestFocus = i;
+                }
+                if (same >= 2 && score > bestMatchScore) {
+                    bestMatchScore = score;
+                    bestMatch = i;
+                }
+                if (estD > bestDropEst) {
+                    bestDropEst = estD;
+                    bestDrop = i;
+                }
+                if (same > 0 && r > bestSelfRow) {
+                    bestSelfRow = r;
+                    bestSelf = i;
+                }
                 int pos = 0;
                 while (pos < s.aiTopCount &&
                        s.aiCandV0[s.aiTopIdx[pos]] >= score) ++pos;
@@ -432,7 +494,23 @@ bool aiPlan(Side& s)
         }
     }
 
-    if (s.aiTopCount == 0) {
+    // Category sampling: guarantee at least one focus / make-3 / drop / self
+    // candidate, then fill with the best V0 cells. 12 candidates fits inside
+    // the 18-frame think window with one replay per frame.
+    s.aiShortCount = 0;
+    auto addShort = [&](int idx) {
+        if (idx < 0 || s.aiShortCount >= 12) return;
+        for (int i = 0; i < s.aiShortCount; ++i)
+            if (s.aiShortIdx[i] == idx) return;
+        s.aiShortIdx[s.aiShortCount++] = idx;
+    };
+    addShort(bestFocus);
+    addShort(bestMatch);
+    addShort(bestDrop);
+    addShort(bestSelf);
+    for (int k = 0; k < s.aiTopCount; ++k) addShort(s.aiTopIdx[k]);
+
+    if (s.aiShortCount == 0) {
         const float miss = 40.0f;
         const float tx = s.game.ShooterX() + (rnd01() - 0.5f) * miss;
         s.game.AimAt(tx, 120.0f);
@@ -447,6 +525,7 @@ bool aiPlan(Side& s)
 
     int pick = s.aiTopIdx[0];
     if (s.aiBlunder > 0.0f && rnd01() < s.aiBlunder) {
+        ++s.aiBlunders;
         const int bestC = s.aiCandC[pick];
         int pool[128];
         int poolN = 0;
@@ -479,8 +558,20 @@ bool aiPlan(Side& s)
     s.aiAimCol = s.aiChosenC;
     s.aiPlanned = true;
     s.aiHaveChoice = true;
-    if (s.aiSimN > 0) s.aiTopCount = s.aiTopCount < s.aiSimN
-                                           ? s.aiTopCount : s.aiSimN;
+    if (s.aiSimN > 0) {
+        s.aiSimCursor = 0;
+        s.aiSimBest = -1.0e9f;
+        for (int i = 0; i < s.aiShortCount; ++i) {
+            s.aiSimScore[i] = -1000000;
+            s.aiSimLand[i] = -1;
+        }
+    } else {
+        // Even V0 levels get one preview replay so the telegraph shows the
+        // real landing column (including jitter), not the target cell index.
+        SimShot preview;
+        replayShot(s.game, s.aiChosenX, s.aiChosenY, preview);
+        if (!preview.lost && preview.landCol >= 0) s.aiAimCol = preview.landCol;
+    }
     return false;
 }
 
@@ -501,8 +592,12 @@ void aiUpdate(Side& s, float dt)
             aiPlan(s);
             return;
         }
-        // Replays are paced by the caller (one per rendered frame); if the
-        // timer expires first, fire with the best candidate found so far.
+        // Never hard-fire before the shortlist is exhausted: the result must
+        // be reproducible. 12 candidates fit inside the 18-frame think.
+        if (s.aiSimN > 0 && s.aiSimCursor < s.aiShortCount) return;
+        aiFinishDuel(s);
+        ++s.aiShots;
+        s.aiLastAimCol = s.aiAimCol;
         s.game.Fire();
         s.aiPlanned = false;
         s.aiAimCol = -1;

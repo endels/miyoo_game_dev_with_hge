@@ -20,12 +20,14 @@ struct Side {
     // column for the telegraph (-1 when there is no plan).
     bool  aiPlanned;
     int   aiAimCol;
+    int   aiLastAimCol;     // landing column captured at fire (telemetry)
     bool  aiFallbackShot;   // last aiPlan() was the no-target lob
 
     // duel v2: the AI is the same greedy shooter, but it cares about the
     // column its attack will land in (AI4) and fires on the duel clock.
     bool  duelMode;
     int   aiFocusCol;       // column to favour (-1 = no preference)
+    int   aiDeepCol;        // opponent's deepest column this turn (telemetry)
     float aiFocusW;         // weight of the column preference (AI4)
 
     // Difficulty dial state, all written by aiApplyLevel(). Level 3 is the
@@ -48,6 +50,10 @@ struct Side {
     int   aiCandV0[128];
     int   aiTopIdx[24];
     int   aiTopCount;
+    int   aiShortIdx[12];
+    int   aiShortCount;
+    int   aiSimScore[12];
+    int   aiSimLand[12];
     int   aiSimCursor;
     int   aiDepthBefore;
     int   aiChosenR;
@@ -58,6 +64,8 @@ struct Side {
     bool  aiHaveChoice;
     int   aiSimBestCol;
     float aiSimBest;
+    int   aiBlunders;
+    int   aiShots;
 
     // Stage tuning. The defaults reproduce the original endless-versus AI;
     // resetStage-style setup can slow the AI down and delay garbage.

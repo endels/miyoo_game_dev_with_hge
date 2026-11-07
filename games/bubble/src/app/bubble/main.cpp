@@ -159,11 +159,13 @@ int runDuelSim(const Options& o)
     mix((u64)m.Overflow());
 
     printf("[duel] seed=%u winner=%d turns=%d shots=%d dur=%.1f depth0=%d depth1=%d "
-           "atk0=%d atk1=%d overflow=%d shots_log=%d frames=%d checksum=0x%016llx\n",
+           "atk0=%d atk1=%d overflow=%d shots_log=%d frames=%d blunder=%d/%d "
+           "checksum=0x%016llx\n",
            o.seed, m.Result(), m.TurnCount(), m.GlobalShots(),
            (double)frames * (double)step,
            m.Depth(0), m.Depth(1), m.MaxAttack(0), m.MaxAttack(1), m.Overflow(),
-           m.ShotCount(), frames, (unsigned long long)sum);
+           m.ShotCount(), frames, m.AiBlunders(), m.AiShots(),
+           (unsigned long long)sum);
 
     if (o.expectChecksumGiven && sum != o.expectChecksum) {
         fprintf(stderr, "[duel] checksum mismatch: got 0x%016llx expected 0x%016llx\n",

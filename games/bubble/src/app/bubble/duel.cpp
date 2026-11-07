@@ -35,8 +35,12 @@ void DuelMatch::Reset(u32 seed)
         s.duelMode = true;
         s.aiPlanned = false;
         s.aiAimCol = -1;
+        s.aiLastAimCol = -1;
         s.aiFallbackShot = false;
+        s.aiBlunders = 0;
+        s.aiShots = 0;
         s.aiFocusCol = -1;
+        s.aiDeepCol = -1;
         // Only the CPU side follows the dial; the player side stays at the
         // default so --duel-sim and autoplay remain deterministic.
         aiApplyLevel(s, i == 1 ? m_aiLevel : kAiLevelDefault);
@@ -65,6 +69,8 @@ void DuelMatch::Reset(u32 seed)
     m_sides[1].game.SetRowEvery(kDescendEveryShots);
 
     m_turn = 0;
+    m_sides[0].aiFocusCol = m_sides[1].game.DeepestColumn();
+    m_sides[0].aiDeepCol = m_sides[0].aiFocusCol;
     m_shotsLeft = kShotsPerTurn;
     m_sub = kDuelPlay;
     m_handoverPending = false;
@@ -87,6 +93,10 @@ void DuelMatch::Reset(u32 seed)
     m_garbageRng = seed ^ 0x9E3779B9u;
     if (m_garbageRng == 0) m_garbageRng = 1;
     m_turnCount = 1;
+    m_clock = 0.0f;
+    m_planTime[0] = m_planTime[1] = 0.0f;
+    m_launchTime[0] = m_launchTime[1] = 0.0f;
+    m_aimMs[0] = m_aimMs[1] = 0.0f;
     m_log.clear();
 
     for (int i = 0; i < 2; ++i)
@@ -122,6 +132,7 @@ void DuelMatch::beginTurn(int side)
     // AI4: value shots that land in the column the opponent is deepest in, so
     // the attack lands where it hurts.
     s.aiFocusCol = m_sides[other].game.DeepestColumn();
+    s.aiDeepCol = s.aiFocusCol;
     // Column bias is per level, not per turn (the value used to be a hard 0.3
     // for both sides; keeping it table-driven leaves level 3 bit-identical).
     s.aiFocusW = aiLevelInfo(s.aiLevel).focusW;
@@ -303,6 +314,8 @@ bool DuelMatch::Fire()
     if (!CanPlayerFire()) return false;
 
     m_sides[0].game.Fire();
+    m_launchTime[0] = m_clock;
+    m_aimMs[0] = 0.0f;
     m_shotOpen[0] = true;
     m_basePops[0] = m_sides[0].game.Pops();
     m_baseDrops[0] = m_sides[0].game.Drops();
@@ -370,6 +383,10 @@ void DuelMatch::settleShot(int side)
     rec.targetCol = col;
     rec.depth0 = m_depth[0];
     rec.depth1 = m_depth[1];
+    rec.deepCol = m_sides[side].aiDeepCol;
+    rec.aimCol = m_sides[side].aiLastAimCol;
+    rec.t = m_launchTime[side];
+    rec.aimMs = m_aimMs[side];
     m_log.push_back(rec);
 
     char colsBuf[64];
@@ -382,10 +399,11 @@ void DuelMatch::settleShot(int side)
 
     fprintf(stderr,
             "[shot] g=%d side=%d turn=%d idx=%d col=%d clear=%d pops=%d drops=%d "
-            "atk=%d tgt=%d depth0=%d depth1=%d desc=%d cols=%s\n",
+            "atk=%d tgt=%d depth0=%d depth1=%d desc=%d cols=%s deep=%d aim=%d t=%.3f aim_ms=%.1f\n",
             m_globalShots, side, m_turn, rec.idx, col, pops + drops,
             pops, drops, atk, col, m_depth[0], m_depth[1],
-            DuelDescendEvery(m_globalShots), colsBuf);
+            DuelDescendEvery(m_globalShots), colsBuf, rec.deepCol, rec.aimCol,
+            rec.t, rec.aimMs);
 
     setRowEvery();
     checkOver();
@@ -428,6 +446,7 @@ void DuelMatch::Tick(float dt, bool playerBot)
 {
     if (m_result != kDuelRunning) return;
 
+    m_clock += dt;
     m_depth[0] = m_sides[0].game.DepthRows();
     m_depth[1] = m_sides[1].game.DepthRows();
     checkOver();
@@ -445,11 +464,14 @@ void DuelMatch::Tick(float dt, bool playerBot)
             // telegraph shows; aiUpdate() only counts down and fires.
             if (!s.aiPlanned) {
                 s.aiTimer = kDuelCpuThinkSec;
+                m_planTime[m_turn] = m_clock;
                 aiPlan(s);
             } else {
                 const int movesBefore = s.game.Moves();
                 aiUpdate(s, dt);
                 if (s.game.Moves() != movesBefore) {
+                    m_launchTime[m_turn] = m_clock;
+                    m_aimMs[m_turn] = (m_clock - m_planTime[m_turn]) * 1000.0f;
                     // The bot fired: open the same settlement window a human
                     // shot would have opened.
                     m_shotOpen[m_turn] = true;
