@@ -68,13 +68,13 @@ bool loadEmbedded(const std::string& selfPath,
                   std::vector<u8>& embGame, std::vector<u8>& embAudio)
 {
     std::string selfPaths[2];
-    selfPaths[0] = selfPath;
 #ifdef _WIN32
-    // argv[0] is narrow/ANSI on Windows; BasePath() is SDL's UTF-8 path.
-    // The packaged executable is bubble_level1.exe, so the fallback must use
-    // the .exe suffix (the Unix build has no suffix).
-    selfPaths[1] = std::string(hge::BasePath()) + "bubble_level1.exe";
+    // BasePath() comes from SDL_GetBasePath() and is UTF-8; argv[0] is ANSI,
+    // so use the UTF-8 base path first and keep argv[0] only as a fallback.
+    selfPaths[0] = std::string(hge::BasePath()) + "bubble_level1.exe";
+    selfPaths[1] = selfPath;
 #else
+    selfPaths[0] = selfPath;
     selfPaths[1] = std::string(hge::BasePath()) + "bubble_level1";
 #endif
 

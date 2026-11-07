@@ -11,13 +11,6 @@
 #include <string>
 #include <vector>
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
@@ -41,17 +34,61 @@ namespace {
 // One read-only opener for every file API below. SDL_RWFromFile ultimately
 // uses fopen() on Windows, whose narrow name is encoded in the process ANSI
 // code page; a UTF-8 path containing Chinese characters is therefore not
-// found even when it is valid. Convert the UTF-8 API path to UTF-16 and use
-// _wfopen (MinGW and MSVC both provide it).
+// found even when it is valid. Decode the UTF-8 API path to UTF-16 and use
+// _wfopen. Do not include <windows.h> here: this project defines its own
+// DWORD/ULONG-compatible types and windows.h clashes with them.
 #ifdef _WIN32
+static void appendUtf16(std::wstring& out, unsigned int cp)
+{
+    if (cp <= 0xFFFF) {
+        out.push_back((wchar_t)cp);
+    } else if (cp <= 0x10FFFF) {
+        cp -= 0x10000;
+        out.push_back((wchar_t)(0xD800 + (cp >> 10)));
+        out.push_back((wchar_t)(0xDC00 + (cp & 0x3FF)));
+    } else {
+        out.push_back((wchar_t)0xFFFD);
+    }
+}
+
+static std::wstring utf8ToWide(const char* s)
+{
+    std::wstring out;
+    const unsigned char* p = (const unsigned char*)s;
+    while (*p) {
+        unsigned int cp = 0xFFFD;
+        int len = 1;
+        const unsigned char b0 = p[0];
+        if (b0 < 0x80) {
+            cp = b0;
+        } else if ((b0 & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) {
+            cp = ((unsigned int)(b0 & 0x1F) << 6) | (p[1] & 0x3F);
+            len = 2;
+            if (cp < 0x80) cp = 0xFFFD;
+        } else if ((b0 & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80) {
+            cp = ((unsigned int)(b0 & 0x0F) << 12) |
+                 ((unsigned int)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+            len = 3;
+            if (cp < 0x800 || (cp >= 0xD800 && cp <= 0xDFFF)) cp = 0xFFFD;
+        } else if ((b0 & 0xF8) == 0xF0 && (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+            cp = ((unsigned int)(b0 & 0x07) << 18) |
+                 ((unsigned int)(p[1] & 0x3F) << 12) |
+                 ((unsigned int)(p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+            len = 4;
+            if (cp < 0x10000 || cp > 0x10FFFF) cp = 0xFFFD;
+        }
+        appendUtf16(out, cp);
+        p += len;
+    }
+    return out;
+}
+
 SDL_RWops* openRead(const char* path)
 {
     if (!path || !path[0]) return nullptr;
-    const int n = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
-    if (n <= 0) return nullptr;
-    std::wstring wide((size_t)n, L'\0');
-    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, &wide[0], n) <= 0)
-        return nullptr;
+    const std::wstring wide = utf8ToWide(path);
     FILE* f = _wfopen(wide.c_str(), L"rb");
     if (!f) return nullptr;
     SDL_RWops* rw = SDL_RWFromFP(f, SDL_TRUE);
