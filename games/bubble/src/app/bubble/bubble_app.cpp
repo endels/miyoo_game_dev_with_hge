@@ -195,7 +195,6 @@ void BubbleApp::startStage(int stage, bool showBrief)
     m_chainCount = 0;
     m_shake = 0.0f;
     m_shakeAmp = 0.0f;
-    m_slowMo = 0.0f;
     m_activeShotSpecial = 0;
 
     resetBattle(m_sides);
@@ -830,13 +829,6 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
     if (m_chainTimer > 0.0f) m_chainTimer -= dt;
     if (m_shake > 0.0f) m_shake -= dt;
 
-    // A short slow-mo on a big chain, but keep UI/readability responsive.
-    float simDt = dt;
-    if (m_slowMo > 0.0f) {
-        m_slowMo -= dt;
-        simDt = dt * 0.28f;
-    }
-
     switch (m_phase) {
     case Phase::BRIEF:
         if (in.firePressed) {
@@ -903,8 +895,8 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
 
         const int pops0 = m_sidesPtr[0].game.Pops();
         const int drops0 = m_sidesPtr[0].game.Drops();
-        updateBattle(m_sides, simDt);
-        if (!m_duel) aiUpdate(m_sidesPtr[1], simDt);
+        updateBattle(m_sides, dt);
+        if (!m_duel) aiUpdate(m_sidesPtr[1], dt);
 
         // Chain rank: total bubbles removed by one shot (match + drops).
         if (m_activeShotSpecial != kSpecialNone && !m_sidesPtr[0].game.IsFlying()) {
@@ -930,10 +922,10 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
                 m_chainRank = rank;
                 m_chainCount = cleared;
                 // Only the rare 8+ chain gets a tiny board-only shake; 3/5
-                // keep the screen stable.
+                // keep the screen stable. Nothing ever slows the clock down:
+                // a hitch in a game like this reads as a stutter, not weight.
                 m_shake = (rank >= 2) ? 0.14f : 0.0f;
                 m_shakeAmp = (rank >= 2) ? (2.0f + 0.6f * (float)rank) : 0.0f;
-                m_slowMo = (rank >= 1) ? 0.18f : 0.0f;
                 fprintf(stderr, "[chain] cleared=%d rank=%d count=%d\n",
                         cleared, rank, m_chainCount);
             }

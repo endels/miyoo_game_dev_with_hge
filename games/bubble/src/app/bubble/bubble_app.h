@@ -119,7 +119,6 @@ private:
     int   m_chainCount = 0;
     float m_shake = 0.0f;
     float m_shakeAmp = 0.0f;
-    float m_slowMo = 0.0f;
     int   m_activeShotSpecial = 0;
     float m_audioStressTimer = 0.0f;
 
