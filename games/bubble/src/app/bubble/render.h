@@ -48,6 +48,9 @@ struct HudState {
     int   duelResult = 0;               // 0 running, 1 win, 2 lose, 3 draw
     int   duelShots = 0;                // global shots played
     int   duelMaxAtk = 0;
+    // CPU difficulty dial: the level, and how long the floating number is due.
+    int   aiLevel = 0;                  // 1..kAiLevels, 0 = do not show
+    float aiLevelFlash = 0.0f;          // seconds left
     bool  pass = false;                 // hand-over / turn-start: no firing
 };
 
@@ -70,6 +73,11 @@ struct RenderCtx {
     IGfxTexture* dinoSad[2] = {0};
     IGfxTexture* dinoLook[2] = {0};
 };
+
+// Screen box of the CPU dino sprite. drawBoard draws it from the same numbers,
+// so a click test against this box always matches what is on screen.
+struct RectBox { float x, y, w, h; };
+RectBox CpuDinoBox(const Game& game);
 
 bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err);
 void FreeTextures(RenderCtx& c);

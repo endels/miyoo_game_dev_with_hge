@@ -23,6 +23,7 @@ struct BubbleOptions {
     bool        autoplay = false;     // dev: let a bot drive the player side
     bool        duel = false;         // turn-based puzzle duel with HP
     int         retries = 3;          // consecutive stage losses before GAME OVER
+    int         aiLevel = kAiLevelDefault;  // CPU difficulty dial (1..kAiLevels)
     std::string selfPath;
 };
 
@@ -54,6 +55,11 @@ private:
     void updateAudio(float dt);
     void updateDuel(float dt, const hge::Input& in);
     void rematchDuel();
+
+    // CPU difficulty dial: clicking the CPU dino cycles 1..kAiLevels.
+    void setAiLevel(int level, const char* why);
+    void cycleAiLevel();
+    bool dialClick(const hge::Input& in);   // true = the click was a dial move
 
     // Dev autoplay: pick a shot by simulating candidate landings on a copy of
     // the player board, then drive the same input path a human would.
@@ -127,6 +133,9 @@ private:
     float     m_duelAtkTimer = 0.0f;
     float     m_duelShotCd = 0.0f;
     int       m_duelSeed = 1;
+
+    int       m_aiLevel = kAiLevelDefault;
+    float     m_aiLevelFlash = 0.0f;   // seconds left of the floating "LV n"
 
     bool m_ready = false;
 };

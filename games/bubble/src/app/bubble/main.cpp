@@ -7,7 +7,9 @@
 //   bubble_level1 --autoplay   dev: a bot plays the player board
 //   bubble_level1 --retries N  consecutive stage losses before GAME OVER (default 3)
 //   bubble_level1 --mute       silent run (audio callback keeps ticking)
-//   bubble_level1 --duel       turn-based puzzle duel (3 shots each, HP)
+//   bubble_level1 --duel       turn-based puzzle duel (5 shots each, depth HP)
+//   bubble_level1 --ai-level N start the CPU at level N (1..5; in game, click
+//                              the CPU dino to cycle it)
 //   --debug-clear / --debug-draft  jump to a screenshot state (development)
 
 #include "hge_app.h"
@@ -39,6 +41,7 @@ struct Options {
     bool        duel = false;
     bool        mute = false;
     int         retries = 3;
+    int         aiLevel = bbl::kAiLevelDefault;
     double      fixedDt = 0.0;
     bool        duelSim = false;
     unsigned    seed = 1u;
@@ -72,6 +75,7 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) o.seed = (unsigned)strtoul(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--mute")) o.mute = true;
         else if (!strcmp(argv[i], "--retries") && i + 1 < argc) o.retries = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--ai-level") && i + 1 < argc) o.aiLevel = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fixed-dt") && i + 1 < argc) o.fixedDt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--shot-frame") && i + 1 < argc) {
             o.shotFrame = atoi(argv[++i]);
@@ -122,6 +126,7 @@ int runDuelSim(const Options& o)
     const int maxFrames = (o.simOnly > 0.0) ? (int)(o.simOnly / step + 0.5) : 400000;
 
     bbl::DuelMatch m;
+    m.SetAiLevel(o.aiLevel);
     m.Reset(o.seed);
 
     int frames = 0;
@@ -190,6 +195,7 @@ int runGame(int argc, char** argv)
     gameOpt.duel = opts.duel;
     if (opts.mute) audio::SetMuted(true);
     gameOpt.retries = opts.retries;
+    gameOpt.aiLevel = opts.aiLevel;
     if (argc > 0 && argv[0]) gameOpt.selfPath = argv[0];
 
     hge::RunConfig cfg;

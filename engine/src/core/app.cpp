@@ -57,8 +57,14 @@ Input pollInput()
             in.mouseY = ev.y;
             break;
         case plat::EV_MOUSEDOWN:
-            if (ev.button == 0)      in.firePressed = true;
-            else if (ev.button == 2) in.restartPressed = true;
+            if (ev.button == 0) {
+                in.firePressed = true;
+                in.clickPressed = true;
+                in.clickX = ev.x;
+                in.clickY = ev.y;
+            } else if (ev.button == 2) {
+                in.restartPressed = true;
+            }
             break;
         case plat::EV_FOCUS_LOST:
             in.focusLost = true;
@@ -80,7 +86,8 @@ Input pollInput()
 
 struct ReplayAction {
     int frame = 0;
-    enum Type { AIM, FIRE, RESTART, QUIT, LEFT_ON, LEFT_OFF, RIGHT_ON, RIGHT_OFF } type = FIRE;
+    enum Type { AIM, FIRE, CLICK, RESTART, QUIT, LEFT_ON, LEFT_OFF, RIGHT_ON,
+                RIGHT_OFF } type = FIRE;
     int x = 0;
     int y = 0;
 };
@@ -120,6 +127,12 @@ bool loadReplay(const char* path, std::vector<ReplayAction>& out, std::string& e
             }
         } else if (what == "fire") {
             a.type = ReplayAction::FIRE;
+        } else if (what == "click") {
+            a.type = ReplayAction::CLICK;
+            if (!(ss >> a.x >> a.y)) {
+                err = "replay line " + std::to_string(lineNo) + ": click needs x y";
+                return false;
+            }
         } else if (what == "restart") {
             a.type = ReplayAction::RESTART;
         } else if (what == "quit") {
@@ -214,6 +227,16 @@ int Run(IGame& game, const RunConfig& cfg)
             switch (a.type) {
             case ReplayAction::AIM:       in.mouseMoved = true; in.mouseX = a.x; in.mouseY = a.y; break;
             case ReplayAction::FIRE:      in.firePressed = true; break;
+            case ReplayAction::CLICK:
+                // A positioned left click: fire plus the point it landed on.
+                in.mouseMoved = true;
+                in.mouseX = a.x;
+                in.mouseY = a.y;
+                in.firePressed = true;
+                in.clickPressed = true;
+                in.clickX = a.x;
+                in.clickY = a.y;
+                break;
             case ReplayAction::RESTART:   in.restartPressed = true; break;
             case ReplayAction::QUIT:      in.quit = true; break;
             case ReplayAction::LEFT_ON:   heldLeft = true; break;

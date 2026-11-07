@@ -62,6 +62,41 @@ int shotValue(const Game& g, float aimX, float aimY)
 
 } // namespace
 
+int aiClampLevel(int level)
+{
+    if (level < 1) return 1;
+    if (level > kAiLevels) return kAiLevels;
+    return level;
+}
+
+const AiLevelInfo& aiLevelInfo(int level)
+{
+    static const AiLevelInfo kTable[kAiLevels] = {
+        // name      interval jitter focus  bounce atk  pace
+        { "EASY",     0.95f,  34.0f, 0.00f, 0.00f, 0, 1.60f },
+        { "CASUAL",   0.75f,  24.0f, 0.10f, 0.25f, 0, 1.30f },
+        { "NORMAL",   0.55f,  14.0f, 0.30f, 0.60f, 0, 1.00f },
+        { "SHARP",    0.42f,   8.0f, 0.55f, 0.85f, 1, 0.75f },
+        { "MASTER",   0.32f,   3.0f, 0.85f, 1.00f, 2, 0.55f },
+    };
+    return kTable[aiClampLevel(level) - 1];
+}
+
+void aiApplyLevel(Side& s, int level)
+{
+    level = aiClampLevel(level);
+    const AiLevelInfo& lv = aiLevelInfo(level);
+    s.aiLevel = level;
+    s.aiInterval = lv.interval;
+    s.aiJitter = lv.jitter;
+    s.aiFocusW = lv.focusW;
+    s.aiBounceP = lv.bounce;
+    s.aiPace = lv.pace;
+    // HGE_AI_BOUNCE is the old dev A/B knob for the wall shot; it still wins.
+    const char* e = getenv("HGE_AI_BOUNCE");
+    if (e) s.aiBounceP = (float)atof(e);
+}
+
 void resetBattle(Side s[2])
 {
     for (int i = 0; i < 2; ++i) {
@@ -85,9 +120,9 @@ void resetBattle(Side s[2])
         s[i].attackBonus = 0;
         s[i].chainPay = false;
         s[i].duelMode = false;
-        s[i].aiInterval = 1.0f;
         s[i].aiFocusCol = -1;
-        s[i].aiFocusW = 0.0f;
+        aiApplyLevel(s[i], kAiLevelDefault);
+        s[i].aiFocusW = 0.0f;   // stage AI has no column bias
     }
     s[0].ai = false;
     s[1].ai = true;
@@ -136,15 +171,11 @@ void aiUpdate(Side& s, float dt)
         aimY = Game::YOf(bestR);
     }
 
-    // Occasional one-bounce shot. Wall shots make the CPU read as smarter,
-    // but they are deliberately rare (12%) and only taken when the straight
-    // options are weak, so the match does not become unfair.
+    // Occasional one-bounce shot. Wall shots make the CPU read as smarter, but
+    // they are only considered when the straight options are weak (and how
+    // often is per level), so the match does not become unfair.
     bool bounceShot = false;
-    static float bounceP = [] {
-        const char* e = getenv("HGE_AI_BOUNCE");
-        return e ? (float)atof(e) : 0.6f;
-    }();
-    if (bestScore < 200 && bounceRand() < bounceP) {
+    if (bestScore < 200 && bounceRand() < s.aiBounceP) {
         const float wallL = s.game.X0() + kR;
         const float wallR = s.game.X0() + s.game.FieldW() - kR;
         const float sx = s.game.ShooterX(), sy = kShooterY;
@@ -191,30 +222,35 @@ void aiUpdate(Side& s, float dt)
         }
     }
 
+    // Stage mode scales its fixed delays by the level; a duel level already
+    // carries its own interval, so it is used as-is (pace 1.0 is exact).
+    const float pace = s.duelMode ? 1.0f : s.aiPace;
+
     if (bestR < 0 && !bounceShot) {
         const float miss = s.sparring ? (s.fireScale < 0.8f ? 44.0f : 64.0f) : 40.0f;
         s.game.AimAt(s.game.ShooterX() + (rnd01() - 0.5f) * miss, 120.0f);
         s.game.Fire();
-        s.aiTimer = s.duelMode
-                        ? s.aiInterval
-                        : (s.sparring
-                               ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                               : 0.9f + rnd01() * 0.8f);
+        s.aiTimer = (s.duelMode
+                         ? s.aiInterval
+                         : (s.sparring
+                                ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                                : 0.9f + rnd01() * 0.8f)) * pace;
         return;
     }
 
     const float jitter = bounceShot
                              ? 5.0f
-                             : (s.sparring ? (s.fireScale < 0.8f ? 18.0f : 26.0f) : 14.0f);
+                             : (s.sparring ? (s.fireScale < 0.8f ? 18.0f : 26.0f)
+                                           : s.aiJitter);
     const float tx = aimX + (rnd01() - 0.5f) * jitter;
     s.game.AimAt(tx, aimY);
     s.game.Fire();
-    s.aiTimer = s.duelMode
-                    ? (s.aiInterval + (bounceShot ? 0.15f : 0.0f))
-                    : ((s.sparring
-                            ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                            : 1.00f + rnd01() * 0.75f) +
-                       (bounceShot ? 0.15f : 0.0f));
+    s.aiTimer = (s.duelMode
+                     ? s.aiInterval + (bounceShot ? 0.15f : 0.0f)
+                     : ((s.sparring
+                             ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                             : 1.00f + rnd01() * 0.75f) +
+                        (bounceShot ? 0.15f : 0.0f))) * pace;
 }
 
 void updateBattle(Side s[2], float dt)

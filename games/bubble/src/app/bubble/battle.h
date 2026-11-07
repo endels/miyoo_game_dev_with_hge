@@ -23,6 +23,13 @@ struct Side {
     int   aiFocusCol;       // column to favour (-1 = no preference)
     float aiFocusW;         // weight of the column preference (AI4)
 
+    // Difficulty dial state, all written by aiApplyLevel(). Level 3 is the
+    // tuning this build shipped with, so a default match is unchanged.
+    int   aiLevel;          // 1..kAiLevels
+    float aiJitter;         // aim noise in px
+    float aiBounceP;        // chance to even consider a wall shot
+    float aiPace;           // stage mode: shot delay multiplier
+
     // Stage tuning. The defaults reproduce the original endless-versus AI;
     // resetStage-style setup can slow the AI down and delay garbage.
     bool  sparring;
@@ -38,6 +45,29 @@ struct Side {
     int   attackBonus;      // extra bubbles earned by a big drop / chain
     bool  chainPay;         // 5+ pop chains bank an extra garbage bubble
 };
+
+// ---- CPU difficulty dial ------------------------------------------------
+// Clicking the CPU dino cycles through these. One table, one place to tune the
+// bot: level 3 is the tuning this build shipped with, 1 is a slow and wild
+// shooter, 5 barely misses and hits harder than the default.
+const int kAiLevels       = 5;
+const int kAiLevelDefault = 3;
+
+struct AiLevelInfo {
+    const char* name;
+    float interval;     // duel: seconds between CPU shots (AI2)
+    float jitter;       // aim noise, px
+    float focusW;       // weight on the opponent's deepest column (AI4)
+    float bounce;       // wall-shot consideration chance
+    int   atkBonus;     // extra garbage on every shot that connects (AI6)
+    float pace;         // stage mode: shot delay multiplier
+};
+
+int  aiClampLevel(int level);
+const AiLevelInfo& aiLevelInfo(int level);
+// Write every AI knob of one side from the table. aiFocusCol is per-turn state
+// and deliberately left alone.
+void aiApplyLevel(Side& s, int level);
 
 void resetBattle(Side s[2]);
 void aiUpdate(Side& s, float dt);

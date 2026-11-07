@@ -33,9 +33,10 @@ void DuelMatch::Reset(u32 seed)
         s.aiTimer = kAIStartDelay;
         s.ai = (i == 1);
         s.duelMode = true;
-        s.aiInterval = kAIInterval;
         s.aiFocusCol = -1;
-        s.aiFocusW = 0.0f;
+        // Only the CPU side follows the dial; the player side stays at the
+        // default so --duel-sim and autoplay remain deterministic.
+        aiApplyLevel(s, i == 1 ? m_aiLevel : kAiLevelDefault);
         // Duel ignores the stage energy/garbage chain: attacks are table driven
         // and applied by this class.
         s.sparring = false;
@@ -83,9 +84,14 @@ void DuelMatch::Reset(u32 seed)
     for (int i = 0; i < 2; ++i)
         m_depth[i] = m_sides[i].game.DepthRows();
 
-    m_sides[0].aiFocusW = 0.0f;
-    m_sides[1].aiFocusW = 0.3f;
+    m_sides[0].aiFocusW = 0.0f;                 // the human side is never biased
     m_sides[1].aiFocusCol = m_sides[0].game.DeepestColumn();
+}
+
+void DuelMatch::SetAiLevel(int level)
+{
+    m_aiLevel = aiClampLevel(level);
+    aiApplyLevel(m_sides[1], m_aiLevel);
 }
 
 void DuelMatch::beginTurn(int side)
@@ -102,7 +108,9 @@ void DuelMatch::beginTurn(int side)
     // AI4: value shots that land in the column the opponent is deepest in, so
     // the attack lands where it hurts.
     s.aiFocusCol = m_sides[other].game.DeepestColumn();
-    s.aiFocusW = 0.3f;
+    // Column bias is per level, not per turn (the value used to be a hard 0.3
+    // for both sides; keeping it table-driven leaves level 3 bit-identical).
+    s.aiFocusW = aiLevelInfo(s.aiLevel).focusW;
     setRowEvery();
 }
 
@@ -173,6 +181,16 @@ void DuelMatch::settleShot(int side)
     const int pops = g.Pops() - m_basePops[side];
     const int drops = g.Drops() - m_baseDrops[side];
     int atk = DuelAttackForShot(pops, drops);
+
+    // AI6: the top two levels convert a connecting shot into more garbage. Aim
+    // stopped paying off once the bot was already accurate (an A/B over 40
+    // seeds found no gain from replaying candidates), so SHARP and MASTER buy
+    // raw attack power instead; NORMAL, the default, buys nothing.
+    const int bonus = aiLevelInfo(m_sides[side].aiLevel).atkBonus;
+    if (atk > 0 && bonus > 0) {
+        atk += bonus;
+        if (atk > kAttackCapPerShot + bonus) atk = kAttackCapPerShot + bonus;
+    }
 
     // A7.1: clearing the whole board is a one-off attack, then play continues.
     if (g.GetState() == Game::WIN) {

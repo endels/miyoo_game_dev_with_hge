@@ -199,6 +199,7 @@ void BubbleApp::startStage(int stage, bool showBrief)
     m_activeShotSpecial = 0;
 
     resetBattle(m_sides);
+    aiApplyLevel(m_sides[1], m_aiLevel);
 
     // Stage 1 is a sparring match; later stages tighten the AI and start
     // sending garbage much sooner, so draft effects have something to bite.
@@ -247,6 +248,7 @@ void BubbleApp::startStage(int stage, bool showBrief)
         // boards and every rule; the stage scaffolding above is unused here.
         m_duel = true;
         m_sidesPtr = m_match.Sides();
+        m_match.SetAiLevel(m_aiLevel);
         m_match.Reset((u32)m_duelSeed);
         m_duelResult = 0;
         m_duelAtk[0] = m_duelAtk[1] = 0;
@@ -390,6 +392,7 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
 {
     m_gfx = gfx;
     m_render.g = gfx;
+    m_aiLevel = aiClampLevel(m_opt.aiLevel);
 
     std::vector<u8> embGame, embAudio;
     const bool haveEmbedded = loadEmbedded(m_opt.selfPath, embGame, embAudio);
@@ -715,6 +718,9 @@ void BubbleApp::updateDuel(float dt, const hge::Input& in)
     if (m_duelAtkTimer > 0.0f) m_duelAtkTimer -= dt;
     if (m_duelShotCd > 0.0f) m_duelShotCd -= dt;
 
+    // A click on the CPU dino is the difficulty dial, not a shot.
+    const bool dial = dialClick(in);
+
     // Aiming is allowed at any time (design §4.3): it only moves the barrel and
     // the pre-aim angle, never any rule value.
     if (in.mouseMoved) m_match.AimAt((float)in.mouseX, (float)in.mouseY);
@@ -722,7 +728,7 @@ void BubbleApp::updateDuel(float dt, const hge::Input& in)
     if (in.aimLeft)  m_match.AimBy(-aimRate * dt);
     if (in.aimRight) m_match.AimBy(aimRate * dt);
 
-    if (in.firePressed && m_duelShotCd <= 0.0f) {
+    if (in.firePressed && !dial && m_duelShotCd <= 0.0f) {
         if (m_match.Fire()) m_duelShotCd = 0.12f;   // T8: no accidental double fire
     }
 
@@ -754,6 +760,44 @@ void BubbleApp::updateDuel(float dt, const hge::Input& in)
     }
 }
 
+// CPU difficulty dial. The level lives here so both modes share it; DuelMatch
+// keeps its own copy because it owns the CPU Side.
+void BubbleApp::setAiLevel(int level, const char* why)
+{
+    m_aiLevel = aiClampLevel(level);
+    if (m_duel) {
+        m_match.SetAiLevel(m_aiLevel);
+    } else if (m_sides[1].ai) {
+        aiApplyLevel(m_sides[1], m_aiLevel);
+    }
+    m_aiLevelFlash = 1.1f;
+
+    const AiLevelInfo& lv = aiLevelInfo(m_aiLevel);
+    fprintf(stderr,
+            "[ai] %s level=%d (%s) interval=%.2f jitter=%.0f focus=%.2f "
+            "bounce=%.2f atk+%d\n",
+            why, m_aiLevel, lv.name, lv.interval, lv.jitter, lv.focusW, lv.bounce,
+            lv.atkBonus);
+    if (m_cStick) audio::Play(*m_cStick, 0.30f);
+}
+
+void BubbleApp::cycleAiLevel()
+{
+    setAiLevel(m_aiLevel >= kAiLevels ? 1 : m_aiLevel + 1, "dial");
+}
+
+// True when this frame's click landed on the CPU dino: the level moves and the
+// caller must not also treat that click as a shot.
+bool BubbleApp::dialClick(const hge::Input& in)
+{
+    if (!in.clickPressed || m_phase != Phase::PLAY) return false;
+    const RectBox box = CpuDinoBox(m_sidesPtr[1].game);
+    if ((float)in.clickX < box.x || (float)in.clickX > box.x + box.w) return false;
+    if ((float)in.clickY < box.y || (float)in.clickY > box.y + box.h) return false;
+    cycleAiLevel();
+    return true;
+}
+
 // Same difficulty, fresh seed: the duel equivalent of a rematch.
 void BubbleApp::rematchDuel()
 {
@@ -780,6 +824,7 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
     if (!m_ready) return;
 
     if (m_bannerTimer > 0.0f) m_bannerTimer -= dt;
+    if (m_aiLevelFlash > 0.0f) m_aiLevelFlash -= dt;
     if (m_draftCooldown > 0.0f) m_draftCooldown -= dt;
     if (m_corruptFlash > 0.0f) m_corruptFlash -= dt;
     if (m_chainTimer > 0.0f) m_chainTimer -= dt;
@@ -816,7 +861,9 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             updateDuel(dt, in);
             break;
         } else {
-            if (in.firePressed) m_sidesPtr[0].game.Fire();
+            // A click on the CPU dino is the difficulty dial, not a shot.
+            const bool dial = dialClick(in);
+            if (in.firePressed && !dial) m_sidesPtr[0].game.Fire();
             if (m_sidesPtr[0].game.IsFlying())
                 m_activeShotSpecial = m_sidesPtr[0].game.ShotSpecial();
             if (in.mouseMoved)
@@ -1067,6 +1114,8 @@ void BubbleApp::Render(IGfx* /*gfx*/, double time)
     hud.chainCount = m_chainCount;
     hud.shake = m_shake;
     hud.shakeAmp = m_shakeAmp;
+    hud.aiLevel = m_aiLevel;
+    hud.aiLevelFlash = m_aiLevelFlash;
 
     RenderFrame(m_render, m_sidesPtr, time + m_opt.animOffset, 0.0f, hud);
 }

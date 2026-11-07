@@ -31,7 +31,7 @@ const int   kClearBoardBonus    = 6;      // A7.1
 const int   kDepthMax           = 13;     // DepthRows() >= this = over the line
 const float kTurnStartSec       = 0.50f;  // TURN_START banner
 const float kAIStartDelay       = 0.40f;  // T7
-const float kAIInterval         = 0.55f;  // AI2 NORMAL
+// AI2 (the CPU shot interval) is per difficulty level; see aiLevelInfo().
 const int   kDuelCols           = 10;
 
 // Attack conversion (A1..A6). One shot settles exactly once.
@@ -97,6 +97,11 @@ public:
     void AimBy(float deltaRad);
     bool Fire();
 
+    // CPU difficulty dial (battle.h). Applies at once and survives rematches;
+    // no rule value depends on it.
+    void SetAiLevel(int level);
+    int  AiLevel() const { return m_aiLevel; }
+
     // ---- read-only state for the app and the HUD
     int  Turn() const           { return m_turn; }
     int  ShotsLeft() const      { return m_shotsLeft; }
@@ -128,6 +133,7 @@ private:
     void checkOver();
 
     Side m_sides[2];
+    int  m_aiLevel = kAiLevelDefault;
     int  m_turn = 0;
     int  m_shotsLeft = kShotsPerTurn;
     int  m_sub = kDuelTurnStart;

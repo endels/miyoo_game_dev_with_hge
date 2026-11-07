@@ -22,6 +22,14 @@ struct Input {
     int  mouseX = 0;
     int  mouseY = 0;
 
+    // A left click is FIRE and a positioned click at the same time. Games that
+    // put a widget in the playfield (the bubble CPU dino) need the position and
+    // need to know where the click landed, so it can be swallowed there instead
+    // of doubling as a shot.
+    bool clickPressed = false;
+    int  clickX = 0;
+    int  clickY = 0;
+
     bool firePressed = false;
     bool restartPressed = false;
     bool aimLeft = false;

@@ -18,6 +18,12 @@ const int WIN_H = kWinH;
 const float kCenterX = 406.0f;      // 406 .. 554
 const float kCenterW = 148.0f;
 
+// Both dinos stand on the shooter line, one body-width to the outside of the
+// cannon. CpuDinoBox() reads the same three numbers for its hit test.
+const float kDinoFeetY = 530.0f;
+const float kDinoSide  = 84.0f;
+const float kDinoSize  = 80.0f;
+
 const int FONT_CW = 20;
 const int FONT_CH = 26;
 const int FONT_COLS = 16;
@@ -372,8 +378,8 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
         drawSpecialBadge(c, game.NextSpecial(), nx + 22.0f, kShooterY, 40.0f, time);
     }
 
-    drawDino(c, g, variant, dinoOnLeft ? sx - 84.0f : sx + 84.0f, 530.0f,
-             dinoOnLeft, game, time);
+    drawDino(c, g, variant, dinoOnLeft ? sx - kDinoSide : sx + kDinoSide,
+             kDinoFeetY, dinoOnLeft, game, time);
 
     // particles
     const std::vector<Particle>& ps = game.Particles();
@@ -401,8 +407,7 @@ void drawDino(RenderCtx& c, IGfx* g, int v, float cx, float feetY, bool flip,
 {
     if (!c.dinoIdle[v][0]) return;
 
-    const float DS = 2.0f;
-    const float DW = 40.0f * DS, DH = 40.0f * DS;
+    const float DW = kDinoSize, DH = kDinoSize;
     IGfxTexture* t = c.dinoIdle[v][0];
 
     const float blinkT = (v == 0) ? 2.4f : 3.1f;
@@ -441,6 +446,17 @@ void drawDino(RenderCtx& c, IGfx* g, int v, float cx, float feetY, bool flip,
 }
 
 } // namespace
+
+RectBox CpuDinoBox(const Game& game)
+{
+    RectBox b;
+    const float cx = game.ShooterX() + kDinoSide;
+    b.x = cx - kDinoSize * 0.5f;
+    b.y = kDinoFeetY - kDinoSize;
+    b.w = kDinoSize;
+    b.h = kDinoSize;
+    return b;
+}
 
 bool LoadTextures(RenderCtx& c, IGfx* gfx, const Pack& pack, std::string* err)
 {
@@ -555,6 +571,28 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
         if (k > 1.0f) k = 1.0f;
         const u32 a = (u32)(80.0f * k);
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, (a << 24) | 0x00B060FF);
+    }
+
+    // ---- CPU difficulty dial: a small level tag in the dead corner under the
+    // CPU dino, plus the number that floats up when the dial moves.
+    if (hud.aiLevel > 0) {
+        const RectBox box = CpuDinoBox(s[1].game);
+        char lv[24];
+        snprintf(lv, sizeof(lv), "LV %d", hud.aiLevel);
+        text(c, box.x + box.w + 6.0f, box.y + box.h - 24.0f, lv, 1.0f, 0x706FA8FF);
+
+        if (hud.aiLevelFlash > 0.0f) {
+            float k = hud.aiLevelFlash / 1.1f;
+            if (k > 1.0f) k = 1.0f;
+            const float fade = k > 0.62f ? 1.0f : k / 0.62f;
+            const float rise = (1.0f - k) * 30.0f;
+            const u32 a = (u32)(fade * 255.0f);
+            // Starts just above the dino's head and floats up into the empty
+            // bottom of the board, so it never sits on the sprite or on the
+            // little level tag in the corner.
+            centreText(c, box.x + box.w * 0.5f, box.y - 24.0f - rise,
+                       lv, 2.0f, (a << 24) | 0x006FA8FF);
+        }
     }
 
     // ---- centre column ------------------------------------------------
