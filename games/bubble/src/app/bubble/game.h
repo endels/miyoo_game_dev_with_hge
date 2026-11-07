@@ -33,6 +33,15 @@ const int   kEnergyPerWave = 16;        // cleared bubbles per garbage wave
 const int   kWaveSize  = 2;             // bubbles per wave
 const int   kMaxQueued = 8;             // cap on pending garbage
 
+// Garbage delivery. A whole attack arrives as one short surge instead of a slow
+// drip: every bubble of a wave shares kRiserWindow, so nothing is still drifting
+// in long after the hit landed.
+const float kRiserWindow      = 0.28f;  // seconds from launch to contact
+const float kRiserWarnSec     = 0.50f;  // red column warning before the surge
+const float kRiserWaveGap     = 0.35f;  // gap before the 2nd surge of a big hit
+const int   kGarbageCapTarget = 3;      // max garbage in the column that was hit
+const int   kGarbageCapOther  = 2;      // max garbage in a spilled-to column
+
 struct Particle {
     float x, y, vx, vy, t, life, scale;
     u32   color;
@@ -44,10 +53,13 @@ struct Falling {
     int   color;
 };
 
-// A garbage bubble drifting up from the bottom of a board until it sticks.
+// A garbage bubble surging up from the bottom of a board until it sticks.
 struct Riser {
     float x, y;
     int   color;
+    int   col;      // column it will land in (drives the incoming warning)
+    float warn;     // seconds left before it starts to rise
+    float t;        // seconds it has been rising
 };
 
 // Special payload carried by a shot bubble. Colours stay 1..kColors; the
@@ -121,6 +133,11 @@ public:
     void AddGarbageAt(int col, int count);
     int  OverflowCount() const { return m_overflow; }
 
+    // Garbage still on its way up: the total, and how many are aimed at one
+    // column. The renderer lights that column up before the surge arrives.
+    int  IncomingCount() const { return (int)m_risers.size(); }
+    int  IncomingIn(int col) const;
+
     // Ceiling descent cadence. Stage mode keeps the compile-time default; duel
     // changes it as the match speeds up.
     void SetRowEvery(int n) { m_rowEvery = (n < 1) ? 1 : n; }
@@ -157,6 +174,9 @@ public:
     void AimBy(float deltaRad);
     void Fire();
     void Update(float dt);
+    // Risers only. Duel hand-over banners freeze shots, not garbage that is
+    // already on its way, so that path calls this instead of Update().
+    void UpdateGarbage(float dt);
 
     State  GetState() const    { return m_state; }
     bool   IsFlying() const    { return m_state == FLY; }
@@ -227,6 +247,8 @@ private:
     void DropFloating();
     bool GridEmpty() const;
     bool OverLine() const;
+    int  PushGarbage(const int* cols, int count);
+    void PickGarbageColumns(int target, int count, int* out);
     void SpawnPop(float x, float y, int color, int count);
     void spawnRing(float x, float y, u32 color, float scale);
 

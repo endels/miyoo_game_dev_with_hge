@@ -329,17 +329,77 @@ bool Game::HitBubble(float x, float y) const
     return HitBubbleCell(x, y, nullptr, nullptr);
 }
 
-void Game::AddGarbage(int count)
+// Column mix for one attack: most of it lands where the shot landed, the rest
+// spills to +-1/+-2, so a big hit presses one column instead of building a
+// single tower. Per-column caps and a "never the same column twice in a row"
+// rule keep the rising bubbles from stacking into one straight line.
+void Game::PickGarbageColumns(int target, int count, int* out)
 {
+    int have[kColsMax] = { 0 };
+    int prev = -1;
     for (int i = 0; i < count; ++i) {
-        if ((int)m_risers.size() >= kMaxQueued) break;
+        int chosen = -1;
+        // pass 0: all rules, 1: allow repeating the last column, 2: ignore caps
+        for (int pass = 0; pass < 3 && chosen < 0; ++pass) {
+            static const int off[5] = { 0, -1, 1, -2, 2 };
+            static const int wgt[5] = { 6, 2, 2, 1, 1 };   // 60% on the hit column
+            int cand[5] = { -1, -1, -1, -1, -1 };
+            int wsum = 0;
+            for (int k = 0; k < 5; ++k) {
+                const int c = target + off[k];
+                if (c < 0 || c >= m_cols) continue;
+                if (pass < 2 && c == prev) continue;
+                const int cap = (pass < 2)
+                    ? ((c == target) ? kGarbageCapTarget : kGarbageCapOther)
+                    : kMaxQueued;
+                if (have[c] >= cap) continue;
+                cand[k] = c;
+                wsum += wgt[k];
+            }
+            if (wsum <= 0) continue;
+            int r = (int)(Rand() % (u32)wsum);
+            for (int k = 0; k < 5; ++k) {
+                if (cand[k] < 0) continue;
+                if (r < wgt[k]) { chosen = cand[k]; break; }
+                r -= wgt[k];
+            }
+        }
+        if (chosen < 0) chosen = target;        // cramped board: never lose one
+        out[i] = chosen;
+        ++have[chosen];
+        prev = chosen;
+    }
+}
+
+// Queue the bubbles for `cols` (nullptr = random columns). The whole batch gets
+// the same short window, a warning lead-in, and big hits are split in two
+// waves. Returns how many did not fit in the queue.
+int Game::PushGarbage(const int* cols, int count)
+{
+    int dropped = 0;
+    const int firstWave = (count >= 6) ? (count + 1) / 2 : count;
+
+    for (int i = 0; i < count; ++i) {
+        if ((int)m_risers.size() >= kMaxQueued) { dropped = count - i; break; }
         Riser r;
-        const int col = (int)(Rand() % (u32)m_cols);
-        r.x = m_x0 + kR + col * kD;
-        r.y = 560.0f + (float)(m_risers.size() % 6) * 46.0f;
+        r.col   = cols ? cols[i] : (int)(Rand() % (u32)m_cols);
+        r.x     = m_x0 + kR + (float)r.col * kD;
+        // Start just under the field so the wave comes in from the bottom edge,
+        // with a little jitter so it never reads as one solid bar.
+        r.y     = 566.0f + (float)(i % 3) * 13.0f + (float)(Rand() % 41) - 20.0f;
         r.color = 1 + (int)(Rand() % (u32)m_colors);
+        r.warn  = kRiserWarnSec + (i < firstWave ? 0.0f : kRiserWaveGap);
+        r.warn += 0.02f * (float)(i % 5);       // <= 0.08 s of stagger
+        r.t     = 0.0f;
         m_risers.push_back(r);
     }
+    return dropped;
+}
+
+void Game::AddGarbage(int count)
+{
+    if (count <= 0) return;
+    PushGarbage(nullptr, count);        // stage mode: random columns, no A11 count
 }
 
 void Game::AddGarbageAt(int col, int count)
@@ -347,17 +407,12 @@ void Game::AddGarbageAt(int col, int count)
     if (count <= 0) return;
     if (col < 0) col = 0;
     if (col >= m_cols) col = m_cols - 1;
-    for (int i = 0; i < count; ++i) {
-        if ((int)m_risers.size() >= kMaxQueued) {
-            m_overflow += count - i;    // A11: dropped and counted
-            break;
-        }
-        Riser r;
-        r.x = m_x0 + kR + (float)col * kD;
-        r.y = 560.0f + (float)((int)m_risers.size() % 6) * 46.0f;
-        r.color = 1 + (int)(Rand() % (u32)m_colors);
-        m_risers.push_back(r);
-    }
+
+    int cols[kMaxQueued];
+    int queued = count;
+    if (queued > kMaxQueued) queued = kMaxQueued;
+    PickGarbageColumns(col, queued, cols);
+    m_overflow += PushGarbage(cols, count);
 }
 
 int Game::DepthRows() const
@@ -378,6 +433,14 @@ int Game::ColumnDepth(int col) const
         if (col < n && m_cell[r][col]) return r + 1;
     }
     return 0;
+}
+
+int Game::IncomingIn(int col) const
+{
+    int n = 0;
+    for (size_t i = 0; i < m_risers.size(); ++i)
+        if (m_risers[i].col == col) ++n;
+    return n;
 }
 
 int Game::DeepestColumn() const
@@ -409,6 +472,60 @@ void Game::MirrorFrom(const Game& src)
     m_corruptTotal  = src.m_corruptTotal;
     m_corruptPopped = src.m_corruptPopped;
     m_landC = -1;
+}
+
+void Game::UpdateGarbage(float dt)
+{
+    // Garbage surging up from the bottom. Every riser gets the same short
+    // window no matter how far it has to travel, so a whole attack arrives as
+    // one surge instead of feeding in one bubble at a time.
+    const float riserWindow = kRiserWindow /
+        ((m_riserSpeed > 0.1f) ? m_riserSpeed : 0.1f);
+    for (size_t i = 0; i < m_risers.size();) {
+        Riser& r = m_risers[i];
+
+        float step = dt;
+        if (r.warn > 0.0f) {                // warning lead-in, nothing moves
+            r.warn -= step;
+            if (r.warn > 0.0f) { ++i; continue; }
+            step = -r.warn;                 // leftovers after the warning
+            r.warn = 0.0f;
+        }
+        r.t += step;
+
+        // Speed that still makes the window: the remaining distance to the
+        // ceiling is an upper bound on this bubble's flight.
+        float left = riserWindow - r.t;
+        if (left < 0.05f) left = 0.05f;
+        float speed = (r.y - kCeilY) / left;
+        const float speedMin = 1500.0f * m_riserSpeed;
+        if (speed < speedMin) speed = speedMin;
+        if (speed > 4000.0f) speed = 4000.0f;
+
+        // Small steps, so it reads as a surge and cannot tunnel past a bubble
+        // between frames.
+        float move = speed * step;
+        bool landed = false;
+        int  hitR = -1, hitC = -1;
+        while (move > 0.0f && !landed) {
+            const float s = move < 6.0f ? move : 6.0f;
+            move -= s;
+            r.y -= s;
+            if (r.y - kR <= kCeilY) landed = true;
+            else if (HitBubbleCell(r.x, r.y, &hitR, &hitC)) landed = true;
+        }
+        if (landed) {
+            m_sc = r.color;
+            m_state = AIM;
+            m_shotSpecial = kSpecialNone;
+            spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
+            Land(r.x, r.y, false, hitR, hitC);
+            m_risers[i] = m_risers.back();
+            m_risers.pop_back();
+            continue;
+        }
+        ++i;
+    }
 }
 
 void Game::Update(float dt)
@@ -447,33 +564,7 @@ void Game::Update(float dt)
         ++i;
     }
 
-    // garbage drifting up from the bottom
-    for (size_t i = 0; i < m_risers.size();) {
-        Riser& r = m_risers[i];
-        // Fast, in small steps, so it reads as an attack surge and cannot
-        // tunnel past a bubble between frames.
-        float move = 800.0f * m_riserSpeed * dt;
-        bool landed = false;
-        int  hitR = -1, hitC = -1;
-        while (move > 0.0f && !landed) {
-            const float s = move < 6.0f ? move : 6.0f;
-            move -= s;
-            r.y -= s;
-            if (r.y - kR <= kCeilY) landed = true;
-            else if (HitBubbleCell(r.x, r.y, &hitR, &hitC)) landed = true;
-        }
-        if (landed) {
-            m_sc = r.color;
-            m_state = AIM;
-            m_shotSpecial = kSpecialNone;
-            spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
-            Land(r.x, r.y, false, hitR, hitC);
-            m_risers[i] = m_risers.back();
-            m_risers.pop_back();
-            continue;
-        }
-        ++i;
-    }
+    UpdateGarbage(dt);
 
     if (m_state != FLY) return;
 

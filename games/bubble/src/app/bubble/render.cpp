@@ -262,6 +262,37 @@ void drawBoard(RenderCtx& c, Game& game, float time, bool showAim, int variant, 
         }
     }
 
+    // Incoming garbage: light the target column and outline the slot the first
+    // bubble will take, so the short surge never arrives unannounced.
+    {
+        const float pulse = 0.5f + 0.5f * sinf(time * 11.0f);
+        const u32 ga = (u32)(70.0f + 90.0f * pulse);
+        for (int cc = 0; cc < game.Cols(); ++cc) {
+            if (game.IncomingIn(cc) <= 0) continue;
+            const float cx = x0 + kR + (float)cc * kD;
+            int d = game.ColumnDepth(cc);
+            if (d >= kMaxRows) d = kMaxRows - 1;
+            const float sy = game.YOfLive(d);
+            const u32 oc = (ga << 24) | 0x00FF5A4A;
+            quad(g, nullptr, cx - kR + 1, sy - kR, kD - 2, 2, oc);
+            quad(g, nullptr, cx - kR + 1, sy + kR - 2, kD - 2, 2, oc);
+            quad(g, nullptr, cx - kR + 1, sy - kR, 2, kD, oc);
+            quad(g, nullptr, cx + kR - 3, sy - kR, 2, kD, oc);
+            // the lane it will come up, fading towards the bottom edge, so
+            // the direction of the attack is obvious at a glance
+            float ly = sy + kR;
+            u32   la = ga;
+            while (ly < WIN_H - 24.0f && la > 10) {
+                quad(g, nullptr, cx - 1, ly, 2, 32, (la << 24) | 0x00FF5A4A);
+                ly += 32.0f;
+                la = la * 3 / 5;
+            }
+            // brighter where it meets the death line: that is what it costs
+            quad(g, nullptr, cx - kR + 3, kDeathY - 2, kD - 6, 5,
+                 (ga << 24) | 0x00FF7A5A);
+        }
+    }
+
     // garbage rising from the bottom
     const std::vector<Riser>& risers = game.Risers();
     for (size_t i = 0; i < risers.size(); ++i)
@@ -598,6 +629,18 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
             if (hud.attackCol[src] >= 0) {
                 snprintf(buf, sizeof(buf), "COL %d", hud.attackCol[src] + 1);
                 centreText(c, cx, dotY + 78.0f, buf, 1.0f, (a << 24) | 0x009FB3CE);
+            }
+        }
+
+        // ---- garbage on its way up into a board. The player's own count is
+        // the one that matters, so it is the loud one.
+        {
+            const int inc = (int)s[0].game.Risers().size();
+            if (inc > 0) {
+                const float p = 0.5f + 0.5f * sinf((float)time * 11.0f);
+                const u32 a = (u32)(150.0f + 105.0f * p);
+                snprintf(buf, sizeof(buf), "INCOMING %d", inc);
+                centreText(c, cx, 372, buf, 1.0f, (a << 24) | 0x00FF7A5A);
             }
         }
 

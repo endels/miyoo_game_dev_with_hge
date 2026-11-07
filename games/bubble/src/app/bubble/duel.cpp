@@ -236,8 +236,15 @@ void DuelMatch::checkOver()
 {
     if (m_result != kDuelRunning) return;
 
-    const bool p0 = m_depth[0] >= kDepthMax;
-    const bool p1 = m_depth[1] >= kDepthMax;
+    // A board can also die on the engine's own limits before DepthRows() ever
+    // reaches kDepthMax: the kMaxRows watermark (it never shrinks, so a board
+    // whose lower rows were all cleared can still hit it) or a land with no
+    // free cell. Left unnoticed, that board refuses Fire() forever and the
+    // match hangs instead of ending.
+    const bool p0 = m_depth[0] >= kDepthMax ||
+                    m_sides[0].game.GetState() == Game::LOSE;
+    const bool p1 = m_depth[1] >= kDepthMax ||
+                    m_sides[1].game.GetState() == Game::LOSE;
     if (p0 && p1) {
         m_result = kDuelDraw;
     } else if (p1) {
@@ -264,10 +271,20 @@ void DuelMatch::Tick(float dt, bool playerBot)
     checkOver();
     if (m_result != kDuelRunning) return;
 
+    // Garbage already on its way keeps rising through the PASS banner. T2
+    // freezes *shots* so a settle can never be decided by motion nobody can
+    // see; this is damage that was committed while the shooter was watching,
+    // and its own column warning is the only warning it gets.
+    if (m_sub == kDuelTurnStart || m_sub == kDuelHandover) {
+        m_sides[0].game.UpdateGarbage(dt);
+        m_sides[1].game.UpdateGarbage(dt);
+    }
+
     switch (m_sub) {
     case kDuelTurnStart:
-        // Frozen boards (design T2): nothing lands during the banner, so the
-        // hand-over can never be decided by motion you cannot see.
+        // Frozen boards (design T2): nothing *lands from a shot* during the
+        // banner, so the hand-over can never be decided by motion you cannot
+        // see. Garbage in flight is handled above.
         m_timer -= dt;
         if (m_timer <= 0.0f) {
             m_sub = kDuelShooting;
@@ -322,6 +339,13 @@ void DuelMatch::Tick(float dt, bool playerBot)
     default:
         break;
     }
+
+    // Garbage can finish a board off between shots. A board left in WIN with
+    // no settlement open refuses the next Fire() forever, which stalls the
+    // whole match, so clear it here. A shot's own clear is settled (and paid
+    // the clear-board bonus) in settleShot before this runs.
+    for (int i = 0; i < 2; ++i)
+        if (!m_shotOpen[i]) m_sides[i].game.ResumeIfWon();
 
     m_depth[0] = m_sides[0].game.DepthRows();
     m_depth[1] = m_sides[1].game.DepthRows();
