@@ -1,4 +1,4 @@
-﻿#ifndef HGE_PLAT_H
+#ifndef HGE_PLAT_H
 #define HGE_PLAT_H
 
 // Platform layer: the only part of the engine that talks to the OS.
@@ -53,8 +53,8 @@ void* GLGetProc(const char* name);
 // Directory of the executable, with trailing separator ("" if unknown).
 const char* BasePath();
 
-// Reads a whole file. Uses SDL_RWops so UTF-8 / non-ASCII paths work on
-// Windows (plain fopen() would fail on the ANSI code page).
+// Reads a whole file. On Windows the path is UTF-8 from SDL and is converted
+// to UTF-16 for _wfopen, so non-ASCII install paths work; Linux uses SDL_RWops.
 bool ReadFileAll(const char* path, std::vector<u8>& out);
 
 // For the self-contained exe: the paks are appended after the PE image and

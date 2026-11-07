@@ -69,7 +69,14 @@ bool loadEmbedded(const std::string& selfPath,
 {
     std::string selfPaths[2];
     selfPaths[0] = selfPath;
+#ifdef _WIN32
+    // argv[0] is narrow/ANSI on Windows; BasePath() is SDL's UTF-8 path.
+    // The packaged executable is bubble_level1.exe, so the fallback must use
+    // the .exe suffix (the Unix build has no suffix).
+    selfPaths[1] = std::string(hge::BasePath()) + "bubble_level1.exe";
+#else
     selfPaths[1] = std::string(hge::BasePath()) + "bubble_level1";
+#endif
 
     for (int sp = 0; sp < 2; ++sp) {
         const char* self = selfPaths[sp].empty() ? nullptr : selfPaths[sp].c_str();

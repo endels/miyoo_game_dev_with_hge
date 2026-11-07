@@ -1,4 +1,4 @@
-﻿// SDL2 platform layer — common part.
+// SDL2 platform layer — common part.
 //
 // Everything here is shared by the desktop and Miyoo backends. The backend
 // .cpp owns window/context creation, presentation, and event translation.
@@ -8,7 +8,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #ifdef __linux__
 #include <sys/prctl.h>
@@ -29,6 +37,33 @@ Uint64        g_t0   = 0;
 u16 g_vk2sc[256];
 
 namespace {
+
+// One read-only opener for every file API below. SDL_RWFromFile ultimately
+// uses fopen() on Windows, whose narrow name is encoded in the process ANSI
+// code page; a UTF-8 path containing Chinese characters is therefore not
+// found even when it is valid. Convert the UTF-8 API path to UTF-16 and use
+// _wfopen (MinGW and MSVC both provide it).
+#ifdef _WIN32
+SDL_RWops* openRead(const char* path)
+{
+    if (!path || !path[0]) return nullptr;
+    const int n = MultiByteToWideChar(CP_UTF8, 0, path, -1, nullptr, 0);
+    if (n <= 0) return nullptr;
+    std::wstring wide((size_t)n, L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, path, -1, &wide[0], n) <= 0)
+        return nullptr;
+    FILE* f = _wfopen(wide.c_str(), L"rb");
+    if (!f) return nullptr;
+    SDL_RWops* rw = SDL_RWFromFP(f, SDL_TRUE);
+    if (!rw) fclose(f);
+    return rw;
+}
+#else
+SDL_RWops* openRead(const char* path)
+{
+    return SDL_RWFromFile(path, "rb");
+}
+#endif
 
 struct KeyMap { int vk; SDL_Scancode sc; };
 
@@ -160,7 +195,7 @@ const char* BasePath()
 
 long long FileSize(const char* path)
 {
-    SDL_RWops* rw = SDL_RWFromFile(path, "rb");
+    SDL_RWops* rw = detail::openRead(path);
     if (!rw) return -1;
     const Sint64 n = SDL_RWsize(rw);
     SDL_RWclose(rw);
@@ -171,7 +206,7 @@ bool ReadFileRange(const char* path, long long offset, size_t size,
                    std::vector<u8>& out)
 {
     out.clear();
-    SDL_RWops* rw = SDL_RWFromFile(path, "rb");
+    SDL_RWops* rw = detail::openRead(path);
     if (!rw) return false;
     if (offset < 0 || SDL_RWseek(rw, (Sint64)offset, RW_SEEK_SET) < 0) {
         SDL_RWclose(rw);
@@ -187,7 +222,7 @@ bool ReadFileRange(const char* path, long long offset, size_t size,
 bool ReadFileAll(const char* path, std::vector<u8>& out)
 {
     out.clear();
-    SDL_RWops* rw = SDL_RWFromFile(path, "rb");
+    SDL_RWops* rw = detail::openRead(path);
     if (!rw) return false;
     const Sint64 sz = SDL_RWsize(rw);
     if (sz < 0) { SDL_RWclose(rw); return false; }
