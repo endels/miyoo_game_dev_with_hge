@@ -1,4 +1,4 @@
-﻿// Bubble stage prototype — player vs AI on two boards, with a corrupted-bubble
+// Bubble stage prototype — player vs AI on two boards, with a corrupted-bubble
 // objective on the player's board.
 //
 //   bubble_level1              play (mouse aim, click/space fire, R restart)
@@ -14,6 +14,7 @@
 #include "hge_audio.h"
 #include "app/bubble/battle.h"
 #include "app/bubble/bubble_app.h"
+#include "app/bubble/duel.h"
 #include "app/bubble/game.h"
 
 #include <cstdio>
@@ -39,6 +40,8 @@ struct Options {
     bool        mute = false;
     int         retries = 3;
     double      fixedDt = 0.0;
+    bool        duelSim = false;
+    unsigned    seed = 1u;
     int         shotFrame = 40;
     bool        shotFrameGiven = false;
     const char* shotPath = nullptr;
@@ -65,6 +68,8 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--audio-stress")) o.audioStress = true;
         else if (!strcmp(argv[i], "--autoplay")) o.autoplay = true;
         else if (!strcmp(argv[i], "--duel")) o.duel = true;
+        else if (!strcmp(argv[i], "--duel-sim")) o.duelSim = true;
+        else if (!strcmp(argv[i], "--seed") && i + 1 < argc) o.seed = (unsigned)strtoul(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--mute")) o.mute = true;
         else if (!strcmp(argv[i], "--retries") && i + 1 < argc) o.retries = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fixed-dt") && i + 1 < argc) o.fixedDt = atof(argv[++i]);
@@ -109,6 +114,49 @@ int runSimOnly(const Options& o)
     return 0;
 }
 
+// Headless duel: both sides driven by the same greedy bot, 1/60 fixed step.
+// Prints one summary line per match so a shell loop can collect 200 seeds.
+int runDuelSim(const Options& o)
+{
+    const float step = 1.0f / 60.0f;
+    const int maxFrames = (o.simOnly > 0.0) ? (int)(o.simOnly / step + 0.5) : 400000;
+
+    bbl::DuelMatch m;
+    m.Reset(o.seed);
+
+    int frames = 0;
+    while (frames < maxFrames && m.Result() == bbl::kDuelRunning) {
+        m.Tick(step, true);
+        ++frames;
+    }
+
+    bbl::Side tmp[2] = { m.SideRef(0), m.SideRef(1) };
+    u64 sum = bbl::battleChecksum(tmp);
+    auto mix = [&sum](u64 v) {
+        sum ^= v + 0x9E3779B97F4A7C15ull + (sum << 6) + (sum >> 2);
+    };
+    mix((u64)m.Result());
+    mix((u64)m.GlobalShots());
+    mix((u64)m.Depth(0));
+    mix((u64)m.Depth(1));
+    mix((u64)m.Overflow());
+
+    const int turns = (m.GlobalShots() + 2 * bbl::kShotsPerTurn - 1) /
+                      (2 * bbl::kShotsPerTurn);
+    printf("[duel] seed=%u winner=%d turns=%d shots=%d dur=%.1f depth0=%d depth1=%d "
+           "atk0=%d atk1=%d overflow=%d shots_log=%d frames=%d checksum=0x%016llx\n",
+           o.seed, m.Result(), turns, m.GlobalShots(), (double)frames * (double)step,
+           m.Depth(0), m.Depth(1), m.MaxAttack(0), m.MaxAttack(1), m.Overflow(),
+           m.ShotCount(), frames, (unsigned long long)sum);
+
+    if (o.expectChecksumGiven && sum != o.expectChecksum) {
+        fprintf(stderr, "[duel] checksum mismatch: got 0x%016llx expected 0x%016llx\n",
+                (unsigned long long)sum, (unsigned long long)o.expectChecksum);
+        return 1;
+    }
+    return m.Result() == bbl::kDuelRunning ? 2 : 0;
+}
+
 int runGame(int argc, char** argv)
 {
     const Options opts = parseArgs(argc, argv);
@@ -122,8 +170,13 @@ int runGame(int argc, char** argv)
         return ok ? 0 : 1;
     }
 
-    if (opts.simOnly >= 0.0)
+    if (opts.duelSim)
+        return runDuelSim(opts);
+
+    if (opts.simOnly >= 0.0) {
+        if (opts.duel) return runDuelSim(opts);
         return runSimOnly(opts);
+    }
 
     bbl::BubbleOptions gameOpt;
     gameOpt.warmup = opts.warmup;

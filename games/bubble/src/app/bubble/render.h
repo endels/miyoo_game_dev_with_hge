@@ -34,13 +34,21 @@ struct HudState {
     float shake = 0.0f;
     float shakeAmp = 0.0f;
 
-    // turn-based duel
+    // turn-based duel (v2)
     bool  duel = false;
-    int   hp[2] = { 0, 0 };
+    int   depth[2] = { 0, 0 };          // DepthRows(), 0..13
+    int   depthMax = 13;
     int   turn = 0;
     int   shotsLeft = 0;
-    const char* hitText = nullptr;
-    float hitFlash = 0.0f;
+    int   shotsMax = 5;
+    int   nextDescendIn = 0;            // shots until the next descend
+    int   attackOut[2] = { 0, 0 };      // last attack sent by each side
+    int   attackCol[2] = { -1, -1 };    // target column of that attack
+    float attackFlash = 0.0f;
+    int   duelResult = 0;               // 0 running, 1 win, 2 lose, 3 draw
+    int   duelShots = 0;                // global shots played
+    int   duelMaxAtk = 0;
+    bool  pass = false;                 // hand-over / turn-start: no firing
 };
 
 struct RenderCtx {

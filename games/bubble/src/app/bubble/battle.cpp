@@ -84,7 +84,10 @@ void resetBattle(Side s[2])
         s[i].waveSize = kWaveSize;
         s[i].attackBonus = 0;
         s[i].chainPay = false;
-        s[i].duelAI = false;
+        s[i].duelMode = false;
+        s[i].aiInterval = 1.0f;
+        s[i].aiFocusCol = -1;
+        s[i].aiFocusW = 0.0f;
     }
     s[0].ai = false;
     s[1].ai = true;
@@ -118,8 +121,10 @@ void aiUpdate(Side& s, float dt)
             if (!reachable(s.game.XOf(r, c), Game::YOf(r))) continue;
             const int same = s.game.SameNeighbors(r, c, want);
             int score = same * 100 - r * 3 + (int)(rnd01() * 6.0f);
-            if (s.duelAI)
-                score += 60 * s.game.CorruptNeighbors(r, c, want);
+            // AI4: prefer a landing column that matches the column our attack
+            // should hit (the opponent's deepest one).
+            if (s.aiFocusCol >= 0 && s.aiFocusW > 0.0f && c == s.aiFocusCol)
+                score += (int)(s.aiFocusW * 120.0f);
 
             if (score > bestScore) { bestScore = score; bestR = r; bestC = c; }
         }
@@ -190,9 +195,11 @@ void aiUpdate(Side& s, float dt)
         const float miss = s.sparring ? (s.fireScale < 0.8f ? 44.0f : 64.0f) : 40.0f;
         s.game.AimAt(s.game.ShooterX() + (rnd01() - 0.5f) * miss, 120.0f);
         s.game.Fire();
-        s.aiTimer = s.sparring
-                        ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                        : 0.9f + rnd01() * 0.8f;
+        s.aiTimer = s.duelMode
+                        ? s.aiInterval
+                        : (s.sparring
+                               ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                               : 0.9f + rnd01() * 0.8f);
         return;
     }
 
@@ -202,10 +209,12 @@ void aiUpdate(Side& s, float dt)
     const float tx = aimX + (rnd01() - 0.5f) * jitter;
     s.game.AimAt(tx, aimY);
     s.game.Fire();
-    s.aiTimer = (s.sparring
-                     ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                     : 1.00f + rnd01() * 0.75f) +
-                (bounceShot ? 0.15f : 0.0f);
+    s.aiTimer = s.duelMode
+                    ? (s.aiInterval + (bounceShot ? 0.15f : 0.0f))
+                    : ((s.sparring
+                            ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                            : 1.00f + rnd01() * 0.75f) +
+                       (bounceShot ? 0.15f : 0.0f));
 }
 
 void updateBattle(Side s[2], float dt)

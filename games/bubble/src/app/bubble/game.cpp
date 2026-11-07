@@ -1,4 +1,4 @@
-﻿#include "app/bubble/game.h"
+#include "app/bubble/game.h"
 
 #include <cmath>
 #include <cstdio>
@@ -102,6 +102,9 @@ void Game::Reset(u32 seed)
     m_chamEvery = 0;
     m_bombRadius = 1.5f;
     m_riserSpeed = 1.0f;
+    m_rowEvery = kRowEvery;
+    m_overflow = 0;
+    m_landC = -1;
     m_curSpecial = kSpecialNone;
     m_nextSpecial = kSpecialNone;
     m_shotSpecial = kSpecialNone;
@@ -166,8 +169,8 @@ int Game::BubblesLeft() const
 
 int Game::MovesUntilRow() const
 {
-    if (kRowEvery <= 0) return 0;
-    return kRowEvery - (m_moves % kRowEvery);
+    if (m_rowEvery <= 0) return 0;
+    return m_rowEvery - (m_moves % m_rowEvery);
 }
 
 int Game::PickColor() const
@@ -337,6 +340,75 @@ void Game::AddGarbage(int count)
         r.color = 1 + (int)(Rand() % (u32)m_colors);
         m_risers.push_back(r);
     }
+}
+
+void Game::AddGarbageAt(int col, int count)
+{
+    if (count <= 0) return;
+    if (col < 0) col = 0;
+    if (col >= m_cols) col = m_cols - 1;
+    for (int i = 0; i < count; ++i) {
+        if ((int)m_risers.size() >= kMaxQueued) {
+            m_overflow += count - i;    // A11: dropped and counted
+            break;
+        }
+        Riser r;
+        r.x = m_x0 + kR + (float)col * kD;
+        r.y = 560.0f + (float)((int)m_risers.size() % 6) * 46.0f;
+        r.color = 1 + (int)(Rand() % (u32)m_colors);
+        m_risers.push_back(r);
+    }
+}
+
+int Game::DepthRows() const
+{
+    for (int r = m_rows - 1; r >= 0; --r) {
+        const int n = RowCount(r);
+        for (int c = 0; c < n; ++c)
+            if (m_cell[r][c]) return r + 1;
+    }
+    return 0;
+}
+
+int Game::ColumnDepth(int col) const
+{
+    if (col < 0 || col >= m_cols) return 0;
+    for (int r = m_rows - 1; r >= 0; --r) {
+        const int n = RowCount(r);
+        if (col < n && m_cell[r][col]) return r + 1;
+    }
+    return 0;
+}
+
+int Game::DeepestColumn() const
+{
+    int best = 0, bestCol = 0;
+    for (int c = 0; c < m_cols; ++c) {
+        const int d = ColumnDepth(c);
+        if (d > best) { best = d; bestCol = c; }
+    }
+    return bestCol;
+}
+
+void Game::MirrorFrom(const Game& src)
+{
+    m_rows  = src.m_rows;
+    m_shift = src.m_shift;
+    for (int r = 0; r < kMaxRows; ++r) {
+        memset(m_cell[r], 0, sizeof(m_cell[r]));
+        memset(m_corrupt[r], 0, sizeof(m_corrupt[r]));
+        const int n = RowCount(r);
+        const int sn = src.RowCount(r);
+        for (int c = 0; c < n; ++c) {
+            const int sc = sn - 1 - c;
+            if (sc < 0 || sc >= sn) continue;
+            m_cell[r][c] = src.m_cell[r][sc];
+            m_corrupt[r][c] = src.m_corrupt[r][sc];
+        }
+    }
+    m_corruptTotal  = src.m_corruptTotal;
+    m_corruptPopped = src.m_corruptPopped;
+    m_landC = -1;
 }
 
 void Game::Update(float dt)
@@ -511,6 +583,7 @@ void Game::Land(float x, float y, bool fromShot, int hitR, int hitC)
     }
 
     m_cell[br][bc] = (u8)placed;
+    m_landC = bc;
     if (br + 1 > m_rows) m_rows = br + 1;
     m_state = AIM;
     m_sinceRes = 0.0f;
@@ -535,6 +608,14 @@ void Game::Land(float x, float y, bool fromShot, int hitR, int hitC)
 
 void Game::ExplodeAt(float x, float y, bool fromShot)
 {
+    // A bomb settles at its impact point, so the attack column comes from there.
+    {
+        const float rel = (x - (m_x0 + kR)) / kD;
+        int col = (int)(rel + 0.5f);
+        if (col < 0) col = 0;
+        if (col >= m_cols) col = m_cols - 1;
+        m_landC = col;
+    }
     const float rad = m_bombRadius * kD;
     const float r2 = rad * rad;
     int cleared = 0;
@@ -708,7 +789,7 @@ void Game::AdvanceCeiling()
         ++m_descends;
     }
 
-    m_ceil += kRowH / (float)kRowEvery;
+    m_ceil += kRowH / (float)m_rowEvery;
     if (m_ceil >= kRowH) {
         m_ceil -= kRowH;
         m_ceilAnim -= kRowH;   // keep the visual offset continuous on wrap

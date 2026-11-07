@@ -4,6 +4,7 @@
 #include "hge_app.h"
 #include "hge_audio.h"
 #include "app/bubble/battle.h"
+#include "app/bubble/duel.h"
 #include "app/bubble/render.h"
 
 #include <memory>
@@ -52,7 +53,7 @@ private:
 
     void updateAudio(float dt);
     void updateDuel(float dt, const hge::Input& in);
-    void ensureAttackBubbles(int side);
+    void rematchDuel();
 
     // Dev autoplay: pick a shot by simulating candidate landings on a copy of
     // the player board, then drive the same input path a human would.
@@ -64,6 +65,7 @@ private:
     IGfx*         m_gfx = nullptr;
     RenderCtx     m_render;
     Side          m_sides[2];
+    Side*         m_sidesPtr = m_sides;   // stage boards, or the duel match's
 
     int   m_lastMoves[2] = { 0, 0 };
     int   m_lastPopsAll = 0;
@@ -115,20 +117,16 @@ private:
     int   m_activeShotSpecial = 0;
     float m_audioStressTimer = 0.0f;
 
-    // Turn-based duel (--duel): both sides share the same puzzle layout, take
-    // turns of kDuelShotsShots shots and damage each other by clearing the
-    // purple attack bubbles.
-    bool  m_duel = false;
-    int   m_hp[2] = { 5, 5 };
-    int   m_turn = 0;              // 0 = player, 1 = cpu
-    int   m_shotsLeft = 3;
-    int   m_turnPhase = 0;         // 0 = can shoot, 1 = handing over
-    float m_turnTimer = 0.0f;
-    int   m_lastCp[2] = { 0, 0 };
-    int   m_lastMovesDuel[2] = { 0, 0 };
-    float m_hitFlash = 0.0f;
-    int   m_hitSide = -1;
-    char  m_hitText[32] = { 0 };
+    // Turn-based duel (--duel): the rules live in DuelMatch. This class only
+    // adapts input and mirrors the match state into the HUD.
+    bool      m_duel = false;
+    DuelMatch m_match;
+    int       m_duelResult = 0;
+    int       m_duelAtk[2] = { 0, 0 };
+    int       m_duelAtkCol[2] = { -1, -1 };
+    float     m_duelAtkTimer = 0.0f;
+    float     m_duelShotCd = 0.0f;
+    int       m_duelSeed = 1;
 
     bool m_ready = false;
 };

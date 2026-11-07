@@ -202,86 +202,71 @@ void BubbleApp::startStage(int stage, bool showBrief)
 
     // Stage 1 is a sparring match; later stages tighten the AI and start
     // sending garbage much sooner, so draft effects have something to bite.
-    m_sides[1].sparring = true;
-    m_sides[1].fireScale = (stage == 0) ? 1.0f : 0.65f;
-    m_sides[1].clearStun = (stage == 0) ? 3.0f : 1.2f;
-    m_sides[1].energyGain = (stage == 0) ? 1.0f : 2.0f;
-    m_sides[1].garbageAfterMoves = (stage == 0) ? 20 : 2;
-    m_sides[1].aiTimer = (stage == 0) ? 1.2f : 0.8f;
-    m_sides[0].keepWin = false;
+    m_sidesPtr[1].sparring = true;
+    m_sidesPtr[1].fireScale = (stage == 0) ? 1.0f : 0.65f;
+    m_sidesPtr[1].clearStun = (stage == 0) ? 3.0f : 1.2f;
+    m_sidesPtr[1].energyGain = (stage == 0) ? 1.0f : 2.0f;
+    m_sidesPtr[1].garbageAfterMoves = (stage == 0) ? 20 : 2;
+    m_sidesPtr[1].aiTimer = (stage == 0) ? 1.2f : 0.8f;
+    m_sidesPtr[0].keepWin = false;
 
     // Stage tuning: drops are the high-skill play, so they charge faster and
     // make the base punishment wave 3 bubbles instead of 2.
-    m_sides[0].stageRules = m_sides[1].stageRules = true;
-    m_sides[0].dropEnergy = m_sides[1].dropEnergy = 2.0f;
-    m_sides[0].waveSize = m_sides[1].waveSize = 3;
-    m_sides[0].attackBonus = m_sides[1].attackBonus = 0;
+    m_sidesPtr[0].stageRules = m_sidesPtr[1].stageRules = true;
+    m_sidesPtr[0].dropEnergy = m_sidesPtr[1].dropEnergy = 2.0f;
+    m_sidesPtr[0].waveSize = m_sidesPtr[1].waveSize = 3;
+    m_sidesPtr[0].attackBonus = m_sidesPtr[1].attackBonus = 0;
 
-    m_sides[0].game.Reset(0x1234u + (u32)stage * 777u);
-    buildStage0(m_sides[0].game);
-    m_sides[0].game.SetBombAtMove(2);   // third shot is a bomb
+    m_sidesPtr[0].game.Reset(0x1234u + (u32)stage * 777u);
+    buildStage0(m_sidesPtr[0].game);
+    m_sidesPtr[0].game.SetBombAtMove(2);   // third shot is a bomb
     if (stage == 0) {
-        m_sides[0].game.SetQueue(2, 1);          // match C1, then drop C3
-        m_sides[0].game.SetPrismAtMove(3);       // fourth shot teaches prism
-        m_sides[0].game.SetChameleonAtMove(5);   // sixth shot teaches chameleon
+        m_sidesPtr[0].game.SetQueue(2, 1);          // match C1, then drop C3
+        m_sidesPtr[0].game.SetPrismAtMove(3);       // fourth shot teaches prism
+        m_sidesPtr[0].game.SetChameleonAtMove(5);   // sixth shot teaches chameleon
     }
 
-    if (m_mods & 1)  m_sides[0].game.GiveBombNow();
-    if (m_mods & 2)  m_sides[0].energyGain = 1.5f;
-    if (m_mods & 4)  m_sides[0].game.SetRiserSpeed(0.85f);
-    if (m_mods & 8)  m_sides[0].game.SetBombRadius(2.1f);
-    if (m_mods & 16) m_sides[0].game.GiveBombNow();   // DOUBLE BOMB
-    if (m_mods & 32) m_sides[0].game.SetBombEvery(6); // BOMB CYCLE
-    if (m_mods & 64) m_sides[0].chainPay = true;      // CHAIN PAYOUT
-    if (m_mods & 128) m_sides[0].game.SetPrismEvery(5);
-    if (m_mods & 256) m_sides[0].game.SetChameleonEvery(7);
-    if (m_bonusBombs > 0 && m_sides[0].game.CurrentSpecial() != kSpecialBomb) {
-        m_sides[0].game.GiveBombNow();
+    if (m_mods & 1)  m_sidesPtr[0].game.GiveBombNow();
+    if (m_mods & 2)  m_sidesPtr[0].energyGain = 1.5f;
+    if (m_mods & 4)  m_sidesPtr[0].game.SetRiserSpeed(0.85f);
+    if (m_mods & 8)  m_sidesPtr[0].game.SetBombRadius(2.1f);
+    if (m_mods & 16) m_sidesPtr[0].game.GiveBombNow();   // DOUBLE BOMB
+    if (m_mods & 32) m_sidesPtr[0].game.SetBombEvery(6); // BOMB CYCLE
+    if (m_mods & 64) m_sidesPtr[0].chainPay = true;      // CHAIN PAYOUT
+    if (m_mods & 128) m_sidesPtr[0].game.SetPrismEvery(5);
+    if (m_mods & 256) m_sidesPtr[0].game.SetChameleonEvery(7);
+    if (m_bonusBombs > 0 && m_sidesPtr[0].game.CurrentSpecial() != kSpecialBomb) {
+        m_sidesPtr[0].game.GiveBombNow();
         --m_bonusBombs;
     }
 
     m_retries = m_opt.retries > 0 ? m_opt.retries : 0;
 
     if (m_opt.duel) {
-        // Turn-based puzzle duel: identical hand-authored boards, no garbage,
-        // no drafts; damage comes from clearing the purple attack bubbles.
+        // Duel v2: no stage chain, no draft, no briefing. DuelMatch owns both
+        // boards and every rule; the stage scaffolding above is unused here.
         m_duel = true;
-        for (int i = 0; i < 2; ++i) {
-            Side& side = m_sides[i];
-            side.game.Configure(kBoardCols, kBoardX[i]);
-            side.game.Reset(0x2222u + (u32)i * 101u);
-            buildStage0(side.game);
-            side.sparring = true;
-            side.fireScale = 1.0f;
-            side.clearStun = 0.0f;
-            side.energyGain = 0.0f;
-            side.garbageAfterMoves = 1000000;
-            side.stageRules = false;
-            side.duelAI = (i == 1);
-            side.aiTimer = 1.2f;
-        }
-        m_hp[0] = m_hp[1] = 5;
-        m_turn = 0;
-        m_shotsLeft = 3;
-        m_turnPhase = 0;
-        m_turnTimer = 0.0f;
-        m_lastCp[0] = m_sides[0].game.CorruptPopped();
-        m_lastCp[1] = m_sides[1].game.CorruptPopped();
-        m_lastMovesDuel[0] = 0;
-        m_lastMovesDuel[1] = 0;
-        m_hitFlash = 0.0f;
-        m_hitSide = -1;
-        m_hitText[0] = 0;
+        m_sidesPtr = m_match.Sides();
+        m_match.Reset((u32)m_duelSeed);
+        m_duelResult = 0;
+        m_duelAtk[0] = m_duelAtk[1] = 0;
+        m_duelAtkCol[0] = m_duelAtkCol[1] = -1;
+        m_duelAtkTimer = 0.0f;
+        m_duelShotCd = 0.0f;
+        m_banner = nullptr;
+        m_bannerTimer = 0.0f;
+        m_phase = Phase::PLAY;
     } else {
         m_duel = false;
+        m_sidesPtr = m_sides;
     }
 
     m_lastMoves[0] = m_lastMoves[1] = 0;
     m_lastPopsAll = 0;
     m_lastDropsAll = 0;
     m_popsAtFire = 0;
-    m_prevState[0] = m_sides[0].game.GetState();
-    m_prevState[1] = m_sides[1].game.GetState();
+    m_prevState[0] = m_sidesPtr[0].game.GetState();
+    m_prevState[1] = m_sidesPtr[1].game.GetState();
 
     if (!showBrief) {
         m_banner = "GO!";
@@ -462,7 +447,7 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
 
     startStage(0);
     if (m_opt.debugClear) {
-        m_sides[1].game.DebugLose();
+        m_sidesPtr[1].game.DebugLose();
         m_phase = Phase::PLAY;
     }
     if (m_opt.debugDraft) {
@@ -479,24 +464,31 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
     }
 
     // --warmup N: player fires N shots before the first frame (screenshots)
+    if (m_duel) {
+        // Duel: warmup is a headless match run, so a screenshot can show a
+        // mid-match HUD. The rules still own every shot.
+        const float step = 1.0f / 60.0f;
+        for (int i = 0; i < m_opt.warmup && m_phase == Phase::PLAY; ++i)
+            m_match.Tick(step, true);
+    } else
     for (int i = 0; i < m_opt.warmup; ++i) {
-        if (m_sides[0].game.GetState() != Game::AIM) break;
+        if (m_sidesPtr[0].game.GetState() != Game::AIM) break;
         int r = -1, c = -1;
-        for (int rr = 0; rr < m_sides[0].game.RowsUsed() && r < 0; ++rr) {
-            const int n = m_sides[0].game.RowCount(rr);
+        for (int rr = 0; rr < m_sidesPtr[0].game.RowsUsed() && r < 0; ++rr) {
+            const int n = m_sidesPtr[0].game.RowCount(rr);
             for (int cc = 0; cc < n; ++cc) {
-                if (m_sides[0].game.Cell(rr, cc) == m_sides[0].game.CurrentColor()) {
+                if (m_sidesPtr[0].game.Cell(rr, cc) == m_sidesPtr[0].game.CurrentColor()) {
                     r = rr; c = cc; break;
                 }
             }
         }
         if (r < 0) break;
-        m_sides[0].game.AimAt(m_sides[0].game.XOf(r, c) + ((i * 37) % 17) - 8.0f,
+        m_sidesPtr[0].game.AimAt(m_sidesPtr[0].game.XOf(r, c) + ((i * 37) % 17) - 8.0f,
                               Game::YOf(r));
-        m_sides[0].game.Fire();
+        m_sidesPtr[0].game.Fire();
         int guard = 0;
-        while (m_sides[0].game.IsFlying() && guard++ < 4000)
-            m_sides[0].game.Update(1.0f / 240.0f);
+        while (m_sidesPtr[0].game.IsFlying() && guard++ < 4000)
+            m_sidesPtr[0].game.Update(1.0f / 240.0f);
     }
 
     // Screenshot/warmup runs expect to see the live board, not the briefing.
@@ -507,11 +499,11 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
         const float step = 1.0f / 60.0f;
         for (float t = 0.0f; t < m_opt.simSeconds; t += step) {
             updateBattle(m_sides, step);
-            aiUpdate(m_sides[1], step);
+            aiUpdate(m_sidesPtr[1], step);
         }
         printf("[bubble] sim %.1fs: p1 left=%d p2 left=%d p1 risers=%d p2 risers=%d\n",
-               m_opt.simSeconds, m_sides[0].game.BubblesLeft(), m_sides[1].game.BubblesLeft(),
-               (int)m_sides[0].game.Risers().size(), (int)m_sides[1].game.Risers().size());
+               m_opt.simSeconds, m_sidesPtr[0].game.BubblesLeft(), m_sidesPtr[1].game.BubblesLeft(),
+               (int)m_sidesPtr[0].game.Risers().size(), (int)m_sidesPtr[1].game.Risers().size());
     }
 
     m_ready = true;
@@ -553,7 +545,7 @@ int topOccupiedRow(const Game& g)
 // bounties, bombs, prism and chameleon payloads, and losing the board.
 bool BubbleApp::planAutoplayShot(float* tx, float* ty)
 {
-    Game& g = m_sides[0].game;
+    Game& g = m_sidesPtr[0].game;
     if (g.GetState() != Game::AIM) return false;
 
     const float sx = g.ShooterX();
@@ -657,11 +649,11 @@ void BubbleApp::driveAutoplay(float dt, hge::Input& in)
     in.mouseMoved = false;
     in.aimLeft = in.aimRight = false;
 
-    // Duel: only act on the player's own turn. Planning during the CPU turn
-    // used to leave a stale aim that the first shot then fired with.
-    if (m_duel && m_phase == Phase::PLAY &&
-        (m_turn != 0 || m_turnPhase != 0)) {
+    // Duel: the bot drives the player side through DuelMatch (see updateDuel),
+    // so it never touches the raw input path here.
+    if (m_duel) {
         m_autoArmed = false;
+        if (m_phase == Phase::CLEAR || m_phase == Phase::OVER) in.firePressed = true;
         return;
     }
 
@@ -673,7 +665,7 @@ void BubbleApp::driveAutoplay(float dt, hge::Input& in)
         break;
 
     case Phase::PLAY: {
-        if (m_sides[0].game.GetState() != Game::AIM) { m_autoArmed = false; break; }
+        if (m_sidesPtr[0].game.GetState() != Game::AIM) { m_autoArmed = false; break; }
         if (m_autoArmed) {
             // The app fires with last frame's angle, then applies the new aim,
             // so aim on one frame and pull the trigger on the next.
@@ -716,105 +708,67 @@ void BubbleApp::driveAutoplay(float dt, hge::Input& in)
     }
 }
 
-void BubbleApp::ensureAttackBubbles(int side)
+// Duel v2 adapter. Every rule lives in DuelMatch; this function only forwards
+// input, keeps the one-shot fire cooldown and lifts attack events into the HUD.
+void BubbleApp::updateDuel(float dt, const hge::Input& in)
 {
-    Game& g = m_sides[side].game;
-    for (int guard = 0; guard < 8; ++guard) {
-        if (g.CorruptTotal() - g.CorruptPopped() >= 3) break;
-        if (!g.PlantCorrupt()) break;
+    if (m_duelAtkTimer > 0.0f) m_duelAtkTimer -= dt;
+    if (m_duelShotCd > 0.0f) m_duelShotCd -= dt;
+
+    // Aiming is allowed at any time (design §4.3): it only moves the barrel and
+    // the pre-aim angle, never any rule value.
+    if (in.mouseMoved) m_match.AimAt((float)in.mouseX, (float)in.mouseY);
+    const float aimRate = 1.6f;     // rad/s
+    if (in.aimLeft)  m_match.AimBy(-aimRate * dt);
+    if (in.aimRight) m_match.AimBy(aimRate * dt);
+
+    if (in.firePressed && m_duelShotCd <= 0.0f) {
+        if (m_match.Fire()) m_duelShotCd = 0.12f;   // T8: no accidental double fire
+    }
+
+    m_match.Tick(dt, m_opt.autoplay);
+
+    int side = 0, atk = 0, col = 0;
+    while (m_match.TakeAttackEvent(&side, &atk, &col)) {
+        m_duelAtk[side] = atk;
+        m_duelAtkCol[side] = col;
+        m_duelAtkTimer = 1.2f;
+        m_corruptFlash = 0.0f;
+        if (side == 0 && m_cPop) audio::Play(*m_cPop, 0.40f);
+    }
+
+    const int res = m_match.Result();
+    if (res == kDuelRunning) return;
+
+    m_duelResult = (res == kDuelPlayerWin) ? 1 : (res == kDuelPlayerLose ? 2 : 3);
+    if (m_phase != Phase::CLEAR && m_phase != Phase::OVER) {
+        if (res == kDuelPlayerLose) {
+            m_phase = Phase::OVER;
+            m_phaseTimer = 0.0f;
+            if (m_cLose) audio::Play(*m_cLose, 0.55f);
+        } else {
+            m_phase = Phase::CLEAR;
+            m_phaseTimer = 1.8f;
+            if (m_cWin) audio::Play(*m_cWin, 0.70f);
+        }
     }
 }
 
-// Turn-based duel: each side gets 3 shots, then the turn passes. Only the
-// purple attack bubbles deal damage; the CPU values shots that clear them.
-void BubbleApp::updateDuel(float dt, const hge::Input& in)
+// Same difficulty, fresh seed: the duel equivalent of a rematch.
+void BubbleApp::rematchDuel()
 {
-    if (m_hitFlash > 0.0f) m_hitFlash -= dt;
-
-    // --- damage bookkeeping (both boards, every frame)
-    for (int i = 0; i < 2; ++i) {
-        const int cp = m_sides[i].game.CorruptPopped();
-        if (cp <= m_lastCp[i]) continue;
-        int dmg = cp - m_lastCp[i];
-        m_lastCp[i] = cp;
-        m_hp[1 - i] -= dmg;
-        if (m_hp[1 - i] < 0) m_hp[1 - i] = 0;
-        m_hitFlash = 0.55f;
-        m_hitSide = 1 - i;
-        snprintf(m_hitText, sizeof(m_hitText), "%s  -%d",
-                 i == 0 ? "CPU HIT" : "YOU HIT", dmg);
-        m_corruptFlash = 0.18f;
-        fprintf(stderr, "[duel] t=%.2f attack side=%d dmg=%d hp=%d/%d\n",
-                hge::Time(), i, dmg, m_hp[0], m_hp[1]);
-    }
-
-    if (m_hp[1] <= 0) {
-        fprintf(stderr, "[duel] t=%.2f win\n", hge::Time());
-        m_phase = Phase::CLEAR;
-        m_phaseTimer = 1.8f;
-        m_banner = "YOU WIN";
-        m_bannerTimer = 2.0f;
-        if (m_cWin) audio::Play(*m_cWin, 0.70f);
-        return;
-    }
-    if (m_hp[0] <= 0) {
-        fprintf(stderr, "[duel] t=%.2f lose\n", hge::Time());
-        m_phase = Phase::OVER;
-        m_phaseTimer = 0.0f;
-        if (m_cLose) audio::Play(*m_cLose, 0.55f);
-        return;
-    }
-
-    // --- hand-over pause, then swap sides
-    if (m_turnPhase == 1) {
-        m_turnTimer -= dt;
-        if (m_turnTimer <= 0.0f) {
-            m_turn ^= 1;
-            m_shotsLeft = 3;
-            m_turnPhase = 0;
-            ensureAttackBubbles(m_turn);
-            m_banner = (m_turn == 0) ? "YOUR TURN" : "CPU TURN";
-            m_bannerTimer = 1.2f;
-            fprintf(stderr, "[duel] t=%.2f turn=%d hp=%d/%d moves=%d/%d corrupt=%d/%d,%d/%d\n",
-                    hge::Time(), m_turn, m_hp[0], m_hp[1],
-                    m_sides[0].game.Moves(), m_sides[1].game.Moves(),
-                    m_sides[0].game.CorruptTotal() - m_sides[0].game.CorruptPopped(),
-                    m_sides[0].game.CorruptTotal(),
-                    m_sides[1].game.CorruptTotal() - m_sides[1].game.CorruptPopped(),
-                    m_sides[1].game.CorruptTotal());
-        }
-        return;
-    }
-
-    // --- count the active side's shots
-    {
-        const int mv = m_sides[m_turn].game.Moves();
-        if (mv > m_lastMovesDuel[m_turn]) {
-            m_shotsLeft -= (mv - m_lastMovesDuel[m_turn]);
-            m_lastMovesDuel[m_turn] = mv;
-            if (m_shotsLeft < 0) m_shotsLeft = 0;
-        }
-    }
-    if (m_shotsLeft <= 0 && m_sides[m_turn].game.GetState() == Game::AIM) {
-        m_turnPhase = 1;
-        m_turnTimer = 0.7f;
-        m_banner = (m_turn == 0) ? "CPU TURN" : "YOUR TURN";
-        m_bannerTimer = 1.4f;
-        return;
-    }
-
-    if (m_turn == 0) {
-        if (in.firePressed) m_sides[0].game.Fire();
-        if (m_sides[0].game.IsFlying())
-            m_activeShotSpecial = m_sides[0].game.ShotSpecial();
-        if (in.mouseMoved)
-            m_sides[0].game.AimAt((float)in.mouseX, (float)in.mouseY);
-        const float aimRate = 1.6f;
-        if (in.aimLeft)  m_sides[0].game.AimBy(-aimRate * dt);
-        if (in.aimRight) m_sides[0].game.AimBy(aimRate * dt);
-    } else {
-        aiUpdate(m_sides[1], dt);
-    }
+    ++m_duelSeed;
+    m_phase = Phase::PLAY;
+    m_duelResult = 0;
+    m_match.Reset((u32)m_duelSeed);
+    m_duelAtk[0] = m_duelAtk[1] = 0;
+    m_duelAtkCol[0] = m_duelAtkCol[1] = -1;
+    m_duelAtkTimer = 0.0f;
+    m_duelShotCd = 0.0f;
+    m_banner = nullptr;
+    m_bannerTimer = 0.0f;
+    m_corruptFlash = 0.0f;
+    fprintf(stderr, "[duel] rematch seed=%d\n", m_duelSeed);
 }
 
 void BubbleApp::Update(float dt, const hge::Input& inRaw)
@@ -860,22 +814,22 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
 
         if (m_duel) {
             updateDuel(dt, in);
-            if (m_phase != Phase::PLAY) break;
+            break;
         } else {
-            if (in.firePressed) m_sides[0].game.Fire();
-            if (m_sides[0].game.IsFlying())
-                m_activeShotSpecial = m_sides[0].game.ShotSpecial();
+            if (in.firePressed) m_sidesPtr[0].game.Fire();
+            if (m_sidesPtr[0].game.IsFlying())
+                m_activeShotSpecial = m_sidesPtr[0].game.ShotSpecial();
             if (in.mouseMoved)
-                m_sides[0].game.AimAt((float)in.mouseX, (float)in.mouseY);
+                m_sidesPtr[0].game.AimAt((float)in.mouseX, (float)in.mouseY);
 
             const float aimRate = 1.6f; // rad/s (slower for finer aim control)
-            if (in.aimLeft)  m_sides[0].game.AimBy(-aimRate * dt);
-            if (in.aimRight) m_sides[0].game.AimBy(aimRate * dt);
+            if (in.aimLeft)  m_sidesPtr[0].game.AimBy(-aimRate * dt);
+            if (in.aimRight) m_sidesPtr[0].game.AimBy(aimRate * dt);
         }
 
-        const int curSp = m_sides[0].game.CurrentSpecial();
+        const int curSp = m_sidesPtr[0].game.CurrentSpecial();
         if (curSp != m_lastSpecialHint) {
-            if (curSp != kSpecialNone && m_sides[0].game.GetState() == Game::AIM) {
+            if (curSp != kSpecialNone && m_sidesPtr[0].game.GetState() == Game::AIM) {
                 if (curSp == kSpecialBomb) {
                     if (!m_bombHintShown) {
                         m_bombHintShown = true;
@@ -893,20 +847,20 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             m_lastSpecialHint = curSp;
         }
 
-        if (m_sides[0].game.GetState() == Game::LOSE) {
+        if (m_sidesPtr[0].game.GetState() == Game::LOSE) {
             fprintf(stderr, "[game] t=%.2f over\n", hge::Time());
             m_phase = Phase::OVER;
             m_phaseTimer = 0.0f;
             break;
         }
 
-        const int pops0 = m_sides[0].game.Pops();
-        const int drops0 = m_sides[0].game.Drops();
+        const int pops0 = m_sidesPtr[0].game.Pops();
+        const int drops0 = m_sidesPtr[0].game.Drops();
         updateBattle(m_sides, simDt);
-        if (!m_duel) aiUpdate(m_sides[1], simDt);
+        if (!m_duel) aiUpdate(m_sidesPtr[1], simDt);
 
         // Chain rank: total bubbles removed by one shot (match + drops).
-        if (m_activeShotSpecial != kSpecialNone && !m_sides[0].game.IsFlying()) {
+        if (m_activeShotSpecial != kSpecialNone && !m_sidesPtr[0].game.IsFlying()) {
             if (m_activeShotSpecial == kSpecialPrism) {
                 m_banner = "PRISM!";
                 m_bannerTimer = 1.2f;
@@ -917,8 +871,8 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             m_activeShotSpecial = kSpecialNone;
         }
 
-        const int cleared = (m_sides[0].game.Pops() - pops0) +
-                            (m_sides[0].game.Drops() - drops0);
+        const int cleared = (m_sidesPtr[0].game.Pops() - pops0) +
+                            (m_sidesPtr[0].game.Drops() - drops0);
         if (cleared >= 3) {
             int rank = 0;
             if (cleared >= 12) rank = 3;
@@ -938,8 +892,8 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             }
         }
 
-        const int total = m_sides[0].game.CorruptTotal();
-        const int cp = m_sides[0].game.CorruptPopped();
+        const int total = m_sidesPtr[0].game.CorruptTotal();
+        const int cp = m_sidesPtr[0].game.CorruptPopped();
         if (!m_duel && cp > m_lastCorrupt) {
             const int gained = cp - m_lastCorrupt;
             m_lastCorrupt = cp;
@@ -948,9 +902,9 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             // Corrupted bubbles are a bounty, not the win condition: each one
             // sends a garbage wave to the CPU, and clearing all three adds a
             // larger burst.
-            m_sides[1].game.AddGarbage(3 * gained);
+            m_sidesPtr[1].game.AddGarbage(3 * gained);
             if (total > 0 && cp >= total) {
-                m_sides[1].game.AddGarbage(4);
+                m_sidesPtr[1].game.AddGarbage(4);
                 m_banner = "BURST!";
             } else {
                 m_banner = "CORRUPTED!";
@@ -958,7 +912,7 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             m_bannerTimer = 1.2f;
         }
 
-        if (m_sides[0].game.GetState() == Game::LOSE) {
+        if (m_sidesPtr[0].game.GetState() == Game::LOSE) {
             fprintf(stderr, "[game] t=%.2f over\n", hge::Time());
             m_phase = Phase::OVER;
             m_phaseTimer = 0.0f;
@@ -967,7 +921,7 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
 
         // Default stage win: the CPU's board overflows. The corrupted-bubble
         // bounty only accelerates this; it is not a separate exit.
-        if (m_sides[1].game.GetState() == Game::LOSE) {
+        if (m_sidesPtr[1].game.GetState() == Game::LOSE) {
             fprintf(stderr, "[game] t=%.2f clear\n", hge::Time());
             m_phase = Phase::CLEAR;
             m_phaseTimer = 1.6f;
@@ -984,7 +938,7 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
             // The win jingle is ~12 s; let the clear card play it, then cut it
             // before the draft so it cannot bleed into the next stage.
             audio::StopEffects();
-            if (m_duel) { startStage(0, false); break; }
+            if (m_duel) { rematchDuel(); break; }
             fprintf(stderr, "[game] t=%.2f draft round=%d\n", hge::Time(), m_draftRound);
             m_phase = Phase::DRAFT;
             m_draftSel = 0;
@@ -998,6 +952,10 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
         break;
 
     case Phase::OVER:
+        if (m_duel) {
+            if (in.firePressed) rematchDuel();
+            break;
+        }
         if (in.firePressed && m_retries > 0) {
             const int left = m_retries - 1;
             startStage(m_stage, false);
@@ -1032,15 +990,15 @@ void BubbleApp::updateAudio(float /*dt*/)
 {
     if (!m_audioOn) return;
 
-    const int mv0 = m_sides[0].game.Moves();
-    const int pp0 = m_sides[0].game.Pops();
-    const int dd0 = m_sides[0].game.Drops();
-    const int de0 = m_sides[0].game.Descends();
+    const int mv0 = m_sidesPtr[0].game.Moves();
+    const int pp0 = m_sidesPtr[0].game.Pops();
+    const int dd0 = m_sidesPtr[0].game.Drops();
+    const int de0 = m_sidesPtr[0].game.Descends();
     if (mv0 > m_lastMoves[0]) { if (m_cShoot) audio::Play(*m_cShoot, 0.38f); m_popsAtFire = pp0; }
     if (pp0 > m_lastPopsAll)  { if (m_cPop)   audio::Play(*m_cPop, 0.52f); }
     if (dd0 > m_lastDropsAll) { if (m_cDrop)  audio::Play(*m_cDrop, 0.48f); }
     if (de0 > m_lastMoves[1]) { if (m_cDesc)  audio::Play(*m_cDesc, 0.40f); }
-    if (m_prevState[0] == Game::FLY && m_sides[0].game.GetState() != Game::FLY &&
+    if (m_prevState[0] == Game::FLY && m_sidesPtr[0].game.GetState() != Game::FLY &&
         pp0 == m_popsAtFire) {
         if (m_cStick) audio::Play(*m_cStick, 0.30f);
     }
@@ -1049,8 +1007,8 @@ void BubbleApp::updateAudio(float /*dt*/)
     m_lastPopsAll = pp0;
     m_lastDropsAll = dd0;
 
-    const Game::State st0 = m_sides[0].game.GetState();
-    const Game::State st1 = m_sides[1].game.GetState();
+    const Game::State st0 = m_sidesPtr[0].game.GetState();
+    const Game::State st1 = m_sidesPtr[1].game.GetState();
     if (st0 == Game::LOSE && m_prevState[0] != Game::LOSE) {
         fprintf(stderr, "[game] t=%.2f sfx lose\n", hge::Time());
         if (m_cLose) audio::Play(*m_cLose, 0.55f);
@@ -1067,8 +1025,8 @@ void BubbleApp::Render(IGfx* /*gfx*/, double time)
 
     HudState hud;
     hud.stage = m_stage + 1;
-    hud.corruptPopped = m_sides[0].game.CorruptPopped();
-    hud.corruptTotal = m_sides[0].game.CorruptTotal();
+    hud.corruptPopped = m_sidesPtr[0].game.CorruptPopped();
+    hud.corruptTotal = m_sidesPtr[0].game.CorruptTotal();
     hud.phase = (int)m_phase;
     hud.draftSel = m_draftSel;
     for (int i = 0; i < 3; ++i) {
@@ -1080,12 +1038,25 @@ void BubbleApp::Render(IGfx* /*gfx*/, double time)
     hud.canRetry = m_retries > 0;
     hud.retries = m_retries;
     hud.duel = m_duel;
-    hud.hp[0] = m_hp[0];
-    hud.hp[1] = m_hp[1];
-    hud.turn = m_turn;
-    hud.shotsLeft = m_shotsLeft;
-    hud.hitText = m_hitText;
-    hud.hitFlash = m_hitFlash;
+    if (m_duel) {
+        hud.depth[0] = m_match.Depth(0);
+        hud.depth[1] = m_match.Depth(1);
+        hud.depthMax = kDepthMax;
+        hud.turn = m_match.Turn();
+        hud.shotsLeft = m_match.ShotsLeft();
+        hud.shotsMax = m_match.ShotsPerTurn();
+        hud.nextDescendIn = m_match.NextDescendIn();
+        hud.attackOut[0] = m_duelAtk[0];
+        hud.attackOut[1] = m_duelAtk[1];
+        hud.attackCol[0] = m_duelAtkCol[0];
+        hud.attackCol[1] = m_duelAtkCol[1];
+        hud.attackFlash = m_duelAtkTimer;
+        hud.duelResult = m_duelResult;
+        hud.duelShots = m_match.GlobalShots();
+        hud.duelMaxAtk = m_match.MaxAttack(0);
+        hud.pass = m_match.SubPhase() != kDuelShooting;
+        hud.canRetry = false;
+    }
     hud.banner = m_banner;
     hud.modName = m_lastModName;
     hud.modDesc = m_lastModDesc;
@@ -1097,7 +1068,7 @@ void BubbleApp::Render(IGfx* /*gfx*/, double time)
     hud.shake = m_shake;
     hud.shakeAmp = m_shakeAmp;
 
-    RenderFrame(m_render, m_sides, time + m_opt.animOffset, 0.0f, hud);
+    RenderFrame(m_render, m_sidesPtr, time + m_opt.animOffset, 0.0f, hud);
 }
 
 void BubbleApp::OnResize(int width, int height)

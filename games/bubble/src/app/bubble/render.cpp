@@ -532,43 +532,78 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     quad(g, nullptr, kCenterX, 0, kCenterW, WIN_H, 0x40060910);
 
     if (hud.phase == 0 && hud.duel) {
-        centreText(c, kCenterX + kCenterW * 0.5f, 8, "DUEL", 1.0f, 0xFFEAF0FA);
-        const char* turnTxt = (hud.turn == 0) ? "YOUR TURN" : "CPU TURN";
-        centreText(c, kCenterX + kCenterW * 0.5f, 36, turnTxt, 1.0f,
-                   hud.turn == 0 ? 0xFFFFD24A : 0xFF6FA8FF);
+        const float cx = kCenterX + kCenterW * 0.5f;
 
-        const float cellW = 16.0f, gap = 5.0f;
-        const float totalW = 5 * cellW + 4 * gap;
-        const float x0 = kCenterX + (kCenterW - totalW) * 0.5f;
-
-        centreText(c, kCenterX + kCenterW * 0.5f, 66, "YOU", 1.0f, 0xFFFFD24A);
-        for (int i = 0; i < 5; ++i) {
-            const u32 col = (i < hud.hp[0]) ? 0xFFFFD24A : 0x505A6A82;
-            quad(g, nullptr, x0 + i * (cellW + gap), 84, cellW, cellW, col);
+        // ---- whose turn. Turn-start / hand-over print PASS so a player never
+        // reads "YOUR TURN" while the fire button is swallowed.
+        if (hud.pass) {
+            centreText(c, cx, 6, "PASS", 1.0f, 0xFF9FB3CE);
+        } else {
+            centreText(c, cx, 6, hud.turn == 0 ? "YOUR TURN" : "CPU TURN", 1.0f,
+                       hud.turn == 0 ? 0xFFFFD24A : 0xFF6FA8FF);
         }
 
-        centreText(c, kCenterX + kCenterW * 0.5f, 112, "CPU", 1.0f, 0xFF6FA8FF);
-        for (int i = 0; i < 5; ++i) {
-            const u32 col = (i < hud.hp[1]) ? 0xFF6FA8FF : 0x505A6A82;
-            quad(g, nullptr, x0 + i * (cellW + gap), 130, cellW, cellW, col);
+        // ---- two 13-cell depth bars: the only survival readout
+        const float barW = 52.0f, pitch = 15.0f, cellH = 13.0f;
+        const float barTopY = 64.0f;
+        const float barH = pitch * (float)hud.depthMax;
+        const float barX[2] = { 424.0f, 484.0f };
+        const u32 sideCol[2] = { 0xFFFFD24A, 0xFF6FA8FF };
+
+        centreText(c, barX[0] + barW * 0.5f, 34, "YOU", 1.0f, sideCol[0]);
+        centreText(c, barX[1] + barW * 0.5f, 34, "CPU", 1.0f, sideCol[1]);
+
+        for (int i = 0; i < 2; ++i) {
+            // frame
+            quad(g, nullptr, barX[i] - 1, barTopY - 1, barW + 2, barH + 2, 0xFF3A4A62);
+            quad(g, nullptr, barX[i], barTopY, barW, barH, 0x70000000);
+            int filled = hud.depth[i];
+            if (filled > hud.depthMax) filled = hud.depthMax;
+            for (int k = 0; k < filled; ++k) {
+                const float y = barTopY + barH - (float)(k + 1) * pitch + 1.0f;
+                quad(g, nullptr, barX[i] + 2, y, barW - 4, cellH, sideCol[i]);
+            }
+            // Death line sits on top of the gauge and is drawn last so the
+            // cells can never hide it.
+            quad(g, nullptr, barX[i] - 3, barTopY - 4, barW + 6, 3, 0xFFE05050);
         }
 
-        char shots[32];
-        snprintf(shots, sizeof(shots), "SHOTS %d", hud.shotsLeft);
-        centreText(c, kCenterX + kCenterW * 0.5f, 170, shots, 1.0f, 0xFFEAF0FA);
+        // ---- shots left: one dot each, dimmed as they are spent
+        const float dotW = 12.0f, dotGap = 6.0f;
+        int shotsMax = hud.shotsMax > 0 ? hud.shotsMax : 5;
+        if (shotsMax > 6) shotsMax = 6;
+        const float dotsW = (float)shotsMax * dotW + (float)(shotsMax - 1) * dotGap;
+        const float dx0 = cx - dotsW * 0.5f;
+        const float dotY = barTopY + barH + 12.0f;
+        for (int k = 0; k < shotsMax; ++k) {
+            const bool on = k < hud.shotsLeft;
+            quad(g, nullptr, dx0 + (float)k * (dotW + dotGap), dotY, dotW, dotW,
+                 on ? sideCol[hud.turn & 1] : 0x405A6A82);
+        }
 
-        if (hud.hitText && hud.hitFlash > 0.0f && hud.hitText[0]) {
-            float k = hud.hitFlash / 0.55f;
+        // ---- time pressure: shots until the ceiling drops one row
+        char buf[32];
+        snprintf(buf, sizeof(buf), "DESC %d", hud.nextDescendIn);
+        centreText(c, cx, dotY + 22.0f, buf, 1.0f,
+                   hud.nextDescendIn <= 1 ? 0xFFFF9A6A : 0xFF8FA6C4);
+
+        // ---- attack readout: what this side just sent, and where it landed
+        if (hud.attackFlash > 0.0f && hud.attackOut[1 - hud.turn] > 0) {
+            const int src = 1 - hud.turn;
+            float k = hud.attackFlash / 1.2f;
             if (k > 1.0f) k = 1.0f;
             const u32 a = (u32)(255.0f * k);
-            centreText(c, kCenterX + kCenterW * 0.5f, 210, hud.hitText, 1.0f,
-                       (a << 24) | 0x00FF8080);
+            snprintf(buf, sizeof(buf), "+%d", hud.attackOut[src]);
+            centreText(c, cx, dotY + 46.0f, buf, 2.0f, (a << 24) | 0x00FFE08A);
+            if (hud.attackCol[src] >= 0) {
+                snprintf(buf, sizeof(buf), "COL %d", hud.attackCol[src] + 1);
+                centreText(c, cx, dotY + 78.0f, buf, 1.0f, (a << 24) | 0x009FB3CE);
+            }
         }
 
-        centreText(c, kCenterX + kCenterW * 0.5f, 240, "PURPLE = DAMAGE", 1.0f,
-                   0xFFC9A6FF);
-        centreText(c, kCenterX + kCenterW * 0.5f, 470, "3 SHOTS EACH", 1.0f,
-                   0xFF8FA6C4);
+        // ---- one-time rule line, then it is gone for good
+        if (hud.duelShots == 0)
+            centreText(c, cx, 470, "5 SHOTS EACH", 1.0f, 0xFF8FA6C4);
     } else if (hud.phase == 0) {
     {
         char stageBuf[24];
@@ -653,10 +688,18 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     // ---- stage overlays ----------------------------------------------
     if (hud.phase == 1) {               // CLEAR
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xD8000000);
-        centreText(c, WIN_W * 0.5f, 180,
-                   hud.duel ? "YOU WIN" : "STAGE CLEAR", 3.0f, 0xFFFFE08A);
+        const char* title = "STAGE CLEAR";
+        if (hud.duel) title = (hud.duelResult == 3) ? "DRAW" : "YOU WIN";
+        centreText(c, WIN_W * 0.5f, 180, title, 3.0f, 0xFFFFE08A);
         if (hud.perfect)
             centreText(c, WIN_W * 0.5f, 238, "PERFECT", 1.5f, 0xFFFFD24A);
+        if (hud.duel) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "SHOTS %d", hud.duelShots);
+            centreText(c, WIN_W * 0.5f, 250, buf, 1.0f, 0xFF9FB3CE);
+            snprintf(buf, sizeof(buf), "BEST SHOT +%d", hud.duelMaxAtk);
+            centreText(c, WIN_W * 0.5f, 274, buf, 1.0f, 0xFF9FB3CE);
+        }
         centreText(c, WIN_W * 0.5f, 320,
                    hud.duel ? "PRESS FIRE TO PLAY AGAIN" : "PRESS FIRE",
                    1.0f, 0xFF9FB3CE);
@@ -689,45 +732,35 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
         centreText(c, WIN_W * 0.5f, 438, "LEFT / RIGHT + FIRE", 1.0f, 0xFF8FA6C4);
     } else if (hud.phase == 3) {        // OVER
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xB4000000);
-        centreText(c, WIN_W * 0.5f, 180, "YOU LOSE", 3.0f, 0xFFFF8A8A);
-        centreText(c, WIN_W * 0.5f, 300,
-                   hud.canRetry ? "PRESS FIRE TO RETRY" : "PRESS R TO RESTART",
-                   1.0f, 0xFF9FB3CE);
-        if (hud.canRetry && hud.retries > 0) {
-            char buf[32];
-            if (hud.retries == 1)
-                snprintf(buf, sizeof(buf), "1 RETRY LEFT");
-            else
-                snprintf(buf, sizeof(buf), "%d RETRIES LEFT", hud.retries);
-            centreText(c, WIN_W * 0.5f, 330, buf, 1.0f, 0xFF8FA6C4);
+        const char* title = hud.duel
+                                ? ((hud.duelResult == 3) ? "DRAW" : "YOU LOSE")
+                                : "YOU LOSE";
+        centreText(c, WIN_W * 0.5f, 180, title, 3.0f, 0xFFFF8A8A);
+        if (hud.duel) {
+            char buf[64];
+            snprintf(buf, sizeof(buf), "SHOTS %d", hud.duelShots);
+            centreText(c, WIN_W * 0.5f, 250, buf, 1.0f, 0xFF9FB3CE);
+            snprintf(buf, sizeof(buf), "BEST SHOT +%d", hud.duelMaxAtk);
+            centreText(c, WIN_W * 0.5f, 274, buf, 1.0f, 0xFF9FB3CE);
+            centreText(c, WIN_W * 0.5f, 320, "PRESS FIRE TO PLAY AGAIN",
+                       1.0f, 0xFF9FB3CE);
+        } else {
+            centreText(c, WIN_W * 0.5f, 300,
+                       hud.canRetry ? "PRESS FIRE TO RETRY" : "PRESS R TO RESTART",
+                       1.0f, 0xFF9FB3CE);
+            if (hud.canRetry && hud.retries > 0) {
+                char buf[32];
+                if (hud.retries == 1)
+                    snprintf(buf, sizeof(buf), "1 RETRY LEFT");
+                else
+                    snprintf(buf, sizeof(buf), "%d RETRIES LEFT", hud.retries);
+                centreText(c, WIN_W * 0.5f, 330, buf, 1.0f, 0xFF8FA6C4);
+            }
         }
     } else if (hud.phase == 4) {        // BRIEF
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xF8000000);
 
         char buf[64];
-        if (hud.duel) {
-            centreText(c, WIN_W * 0.5f, 40, "DUEL", 2.5f, 0xFFEAF0FA);
-            centreText(c, WIN_W * 0.5f, 120, "3 SHOTS EACH", 1.5f, 0xFFEAF0FA);
-
-            const float icon = 90.0f;
-            const float ix = WIN_W * 0.5f - icon * 0.5f;
-            const float iy = 180.0f;
-            quad(g, c.bubbles[3], ix, iy, icon, icon, 0xFFFFFFFF);
-            const float pulse = 0.5f + 0.5f * sinf((float)time * 5.0f);
-            const u32 ringA = (u32)(150.0f + 90.0f * pulse);
-            quad(g, c.ring, ix, iy, icon, icon, (ringA << 24) | 0x00B060FF);
-            centreText(c, WIN_W * 0.5f, iy + 18.0f, "!", 2.0f, 0xFFFFE0FF);
-
-            centreText(c, WIN_W * 0.5f, 290, "POP PURPLE BUBBLES TO DAMAGE THE CPU",
-                       1.0f, 0xFFC9A6FF);
-            centreText(c, WIN_W * 0.5f, 326, "TURNS: YOU 3 SHOTS, THEN CPU 3 SHOTS",
-                       1.0f, 0xFF9FB3CE);
-            centreText(c, WIN_W * 0.5f, 360, "FIRST SIDE AT 0 HP LOSES",
-                       1.0f, 0xFF9FB3CE);
-            centreText(c, WIN_W * 0.5f, 394, "PURPLE BUBBLES RESPAWN EACH TURN",
-                       1.0f, 0xFF9FB3CE);
-            centreText(c, WIN_W * 0.5f, 455, "PRESS FIRE TO START", 1.0f, 0xFF8FA6C4);
-        } else {
         snprintf(buf, sizeof(buf), "STAGE %d", hud.stage);
         centreText(c, WIN_W * 0.5f, 40, buf, 2.5f, 0xFFEAF0FA);
 
@@ -765,7 +798,6 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
             centreText(c, WIN_W * 0.5f, 426, buf, 1.0f, 0xFFFFD24A);
         }
         centreText(c, WIN_W * 0.5f, 455, "PRESS FIRE TO START", 1.0f, 0xFF8FA6C4);
-        }
     } else if (hud.banner && hud.bannerTimer > 0.0f) {
         centreText(c, kCenterX + kCenterW * 0.5f, 420.0f, hud.banner, 1.0f,
                    0xFFFFD24A);
@@ -774,7 +806,7 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     // Legacy endless-versus result overlay, kept for --sim/screenshot paths.
     const bool playerDead = s[0].game.GetState() == Game::LOSE;
     const bool aiDead = s[1].game.GetState() == Game::LOSE;
-    if (hud.phase == 0 && (playerDead || aiDead)) {
+    if (hud.phase == 0 && !hud.duel && (playerDead || aiDead)) {
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xB4000000);
         const bool win = aiDead && !playerDead;
         centreText(c, WIN_W * 0.5f, 200, win ? "YOU WIN" : "YOU LOSE", 3.0f,

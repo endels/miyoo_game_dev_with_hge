@@ -1,4 +1,4 @@
-﻿#ifndef BBL_GAME_H
+#ifndef BBL_GAME_H
 #define BBL_GAME_H
 
 // Puzzle-Bobble grid logic, no rendering, no platform dependency, so it can be
@@ -106,6 +106,28 @@ public:
     void GiveChameleonNow() { m_curSpecial = kSpecialChameleon; }
     void SetBombRadius(float r) { m_bombRadius = r; }
     void SetRiserSpeed(float s) { m_riserSpeed = s; }
+
+    // ---- duel v2 -----------------------------------------------------
+    // Rows from the top down to the lowest bubble (0 = empty board). The win
+    // condition is DepthRows() >= kDepthMax, which is also what the HUD reads.
+    int  DepthRows() const;
+    int  ColumnDepth(int c) const;      // lowest bubble row in one column + 1
+    int  DeepestColumn() const;         // the column with the lowest bubble
+    // Column the last landed shot occupied (0-based), -1 before any shot.
+    int  LastLandCol() const { return m_landC; }
+
+    // Garbage aimed at one column, raising the queue cap overflow counter when
+    // more is requested than kMaxQueued allows.
+    void AddGarbageAt(int col, int count);
+    int  OverflowCount() const { return m_overflow; }
+
+    // Ceiling descent cadence. Stage mode keeps the compile-time default; duel
+    // changes it as the match speeds up.
+    void SetRowEvery(int n) { m_rowEvery = (n < 1) ? 1 : n; }
+    int  RowEvery() const { return m_rowEvery; }
+
+    // Copy another board's cells column-mirrored (same rows / shift).
+    void MirrorFrom(const Game& src);
 
     // Scripted one-shots beat repeating cycles, so the tutorial sequence is
     // never skipped by a draft mod.
@@ -236,6 +258,9 @@ private:
     int m_chamEvery;
     float m_bombRadius;
     float m_riserSpeed;
+    int   m_rowEvery;
+    int   m_overflow;
+    int   m_landC;
     State m_state;
     float m_angle;
     mutable u32 m_rand;

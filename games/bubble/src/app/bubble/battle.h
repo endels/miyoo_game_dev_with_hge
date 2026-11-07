@@ -15,7 +15,13 @@ struct Side {
     int   lastPops;
     int   lastDrops;
     bool  ai;
-    bool  duelAI;           // duel mode: value shots next to attack bubbles
+
+    // duel v2: the AI is the same greedy shooter, but it cares about the
+    // column its attack will land in (AI4) and fires on the duel clock.
+    bool  duelMode;
+    float aiInterval;       // seconds between bot shots (AI2)
+    int   aiFocusCol;       // column to favour (-1 = no preference)
+    float aiFocusW;         // weight of the column preference (AI4)
 
     // Stage tuning. The defaults reproduce the original endless-versus AI;
     // resetStage-style setup can slow the AI down and delay garbage.
