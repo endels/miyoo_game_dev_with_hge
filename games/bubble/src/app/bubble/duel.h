@@ -119,6 +119,10 @@ public:
     int  ShotsLeft() const      { return m_shotsLeft; }
     int  ShotsPerTurn() const   { return kShotsPerTurn; }
     int  TurnCount() const      { return m_turnCount; }
+    // Thinking-period telegraph. Both are empty/zero outside the 0.30 s CPU
+    // think window (or when it is not the CPU's turn).
+    int   CpuAimCol() const;
+    float CpuThinkLeft() const;
     int  GlobalShots() const    { return m_globalShots; }
     int  Result() const         { return m_result; }
     int  Depth(int side) const  { return m_depth[side]; }

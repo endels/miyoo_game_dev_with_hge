@@ -33,6 +33,9 @@ void DuelMatch::Reset(u32 seed)
         s.aiTimer = kAIStartDelay;
         s.ai = (i == 1);
         s.duelMode = true;
+        s.aiPlanned = false;
+        s.aiAimCol = -1;
+        s.aiFallbackShot = false;
         s.aiFocusCol = -1;
         // Only the CPU side follows the dial; the player side stays at the
         // default so --duel-sim and autoplay remain deterministic.
@@ -113,6 +116,9 @@ void DuelMatch::beginTurn(int side)
     const int other = 1 - side;
     Side& s = m_sides[side];
     s.aiTimer = kAIStartDelay;
+    s.aiPlanned = false;
+    s.aiAimCol = -1;
+    s.aiFallbackShot = false;
     // AI4: value shots that land in the column the opponent is deepest in, so
     // the attack lands where it hurts.
     s.aiFocusCol = m_sides[other].game.DeepestColumn();
@@ -141,6 +147,22 @@ DuelHudState DuelMatch::PlayerHudState() const
     // Player's turn with 0 shots left and no shot in the air: the per-shot
     // HUD must show 0/N instead of a fake "IN FLIGHT" while the boards settle.
     return kDuelHudYourShot;
+}
+
+int DuelMatch::CpuAimCol() const
+{
+    if (m_result != kDuelRunning || m_turn != 1) return -1;
+    const Side& s = m_sides[1];
+    if (!s.aiPlanned || s.aiTimer <= 0.0f) return -1;
+    return s.aiAimCol;
+}
+
+float DuelMatch::CpuThinkLeft() const
+{
+    if (m_result != kDuelRunning || m_turn != 1) return 0.0f;
+    const Side& s = m_sides[1];
+    if (!s.aiPlanned) return 0.0f;
+    return s.aiTimer > 0.0f ? s.aiTimer : 0.0f;
 }
 
 bool DuelMatch::readyToHandOver() const
@@ -429,15 +451,22 @@ void DuelMatch::Tick(float dt, bool playerBot)
         !m_shotOpen[m_turn] && m_shotsLeft > 0) {
         Side& s = m_sides[m_turn];
         if (s.game.GetState() == Game::AIM) {
-            const int movesBefore = s.game.Moves();
-            aiUpdate(s, dt);
-            if (s.game.Moves() != movesBefore) {
-                // The bot fired: open the same settlement window a human shot
-                // would have opened.
-                m_shotOpen[m_turn] = true;
-                m_basePops[m_turn] = s.game.Pops();
-                m_baseDrops[m_turn] = s.game.Drops();
-                --m_shotsLeft;
+            // One plan + a fresh 0.30 s think per shot. The plan is what the
+            // telegraph shows; aiUpdate() only counts down and fires.
+            if (!s.aiPlanned) {
+                s.aiTimer = kDuelCpuThinkSec;
+                aiPlan(s);
+            } else {
+                const int movesBefore = s.game.Moves();
+                aiUpdate(s, dt);
+                if (s.game.Moves() != movesBefore) {
+                    // The bot fired: open the same settlement window a human
+                    // shot would have opened.
+                    m_shotOpen[m_turn] = true;
+                    m_basePops[m_turn] = s.game.Pops();
+                    m_baseDrops[m_turn] = s.game.Drops();
+                    --m_shotsLeft;
+                }
             }
         }
     }

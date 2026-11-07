@@ -15,6 +15,12 @@ struct Side {
     int   lastPops;
     int   lastDrops;
     bool  ai;
+    // Duel per-shot thinking: aiPlan() selects the shot and points the barrel;
+    // aiUpdate() only counts down and fires. aiAimCol is the planned landing
+    // column for the telegraph (-1 when there is no plan).
+    bool  aiPlanned;
+    int   aiAimCol;
+    bool  aiFallbackShot;   // last aiPlan() was the no-target lob
 
     // duel v2: the AI is the same greedy shooter, but it cares about the
     // column its attack will land in (AI4) and fires on the duel clock.
@@ -52,6 +58,9 @@ struct Side {
 // shooter, 5 barely misses and hits harder than the default.
 const int kAiLevels       = 5;
 const int kAiLevelDefault = 3;
+// Duel: every CPU shot gets this much visible thinking before it fires. Stage
+// mode keeps its old level-based delays.
+const float kDuelCpuThinkSec = 0.30f;
 
 struct AiLevelInfo {
     const char* name;
@@ -70,6 +79,9 @@ const AiLevelInfo& aiLevelInfo(int level);
 void aiApplyLevel(Side& s, int level);
 
 void resetBattle(Side s[2]);
+// Decide the next shot and point the barrel. Returns true for a wall-bounce
+// shot (stage mode uses that to add its extra delay). No firing.
+bool aiPlan(Side& s);
 void aiUpdate(Side& s, float dt);
 void updateBattle(Side s[2], float dt);
 

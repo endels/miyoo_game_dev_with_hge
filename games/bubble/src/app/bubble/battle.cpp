@@ -105,6 +105,9 @@ void resetBattle(Side s[2])
         s[i].game.Reset(0x1234u + (u32)i * 777u);
         s[i].energy = 0.0f;
         s[i].aiTimer = 1.2f;
+        s[i].aiPlanned = false;
+        s[i].aiAimCol = -1;
+        s[i].aiFallbackShot = false;
         s[i].lastPops = s[i].game.Pops();
         s[i].lastDrops = s[i].game.Drops();
         s[i].sparring = false;
@@ -128,16 +131,8 @@ void resetBattle(Side s[2])
     s[1].ai = true;
 }
 
-void aiUpdate(Side& s, float dt)
+bool aiPlan(Side& s)
 {
-    if (s.stun > 0.0f) {
-        s.stun -= dt;
-        return;
-    }
-    if (s.game.GetState() != Game::AIM) return;
-    s.aiTimer -= dt;
-    if (s.aiTimer > 0.0f) return;
-
     // Score every attachable empty cell: matching neighbours matter most,
     // then prefer higher cells so the stack does not creep downwards.
     // Only consider cells with a clear line of fire: aiming at a buried cell
@@ -166,6 +161,7 @@ void aiUpdate(Side& s, float dt)
     }
 
     float aimX = 0.0f, aimY = 0.0f;
+    int aimCol = bestC;
     if (bestR >= 0) {
         aimX = s.game.XOf(bestR, bestC);
         aimY = Game::YOf(bestR);
@@ -180,6 +176,7 @@ void aiUpdate(Side& s, float dt)
         const float wallR = s.game.X0() + s.game.FieldW() - kR;
         const float sx = s.game.ShooterX(), sy = kShooterY;
         int   bScore = -100000;
+        int   bC = -1;
         float bX = 0.0f, bY = 0.0f;
         for (int r = 0; r <= s.game.RowsUsed() && r < kMaxRows; ++r) {
             const int n = s.game.RowCount(r);
@@ -201,7 +198,7 @@ void aiUpdate(Side& s, float dt)
                     if (!lineClear(s.game, wall, by, tx, ty)) continue;
                     const int same = s.game.SameNeighbors(r, c, want);
                     const int score = same * 100 - r * 3 + 40 + (int)(bounceRand() * 6.0f);
-                    if (score > bScore) { bScore = score; bX = mx; bY = ty; }
+                    if (score > bScore) { bScore = score; bX = mx; bY = ty; bC = c; }
                 }
             }
         }
@@ -215,6 +212,7 @@ void aiUpdate(Side& s, float dt)
                 bounceShot = true;
                 aimX = bX;
                 aimY = bY;
+                aimCol = bC;
                 if (getenv("HGE_DEBUG_AI"))
                     fprintf(stderr, "[ai] bounce move=%d aim=%.0f,%.0f direct=%d bounce=%d\n",
                             s.game.Moves(), bX, bY, direct, bounce);
@@ -222,20 +220,18 @@ void aiUpdate(Side& s, float dt)
         }
     }
 
-    // Stage mode scales its fixed delays by the level; a duel level already
-    // carries its own interval, so it is used as-is (pace 1.0 is exact).
-    const float pace = s.duelMode ? 1.0f : s.aiPace;
-
+    s.aiFallbackShot = false;
     if (bestR < 0 && !bounceShot) {
         const float miss = s.sparring ? (s.fireScale < 0.8f ? 44.0f : 64.0f) : 40.0f;
-        s.game.AimAt(s.game.ShooterX() + (rnd01() - 0.5f) * miss, 120.0f);
-        s.game.Fire();
-        s.aiTimer = (s.duelMode
-                         ? s.aiInterval
-                         : (s.sparring
-                                ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                                : 0.9f + rnd01() * 0.8f)) * pace;
-        return;
+        const float tx = s.game.ShooterX() + (rnd01() - 0.5f) * miss;
+        s.game.AimAt(tx, 120.0f);
+        aimCol = (int)((tx - s.game.X0()) / kD);
+        if (aimCol < 0) aimCol = 0;
+        if (aimCol >= kBoardCols) aimCol = kBoardCols - 1;
+        s.aiAimCol = aimCol;
+        s.aiPlanned = true;
+        s.aiFallbackShot = true;
+        return false;
     }
 
     const float jitter = bounceShot
@@ -244,13 +240,57 @@ void aiUpdate(Side& s, float dt)
                                            : s.aiJitter);
     const float tx = aimX + (rnd01() - 0.5f) * jitter;
     s.game.AimAt(tx, aimY);
+    s.aiAimCol = aimCol;
+    s.aiPlanned = true;
+    return bounceShot;
+}
+
+void aiUpdate(Side& s, float dt)
+{
+    if (s.stun > 0.0f) {
+        s.stun -= dt;
+        return;
+    }
+    if (s.game.GetState() != Game::AIM) return;
+    s.aiTimer -= dt;
+    if (s.aiTimer > 0.0f) return;
+
+    if (s.duelMode) {
+        // DuelMatch plans the shot and sets 0.30 s on the first frame of each
+        // shot. Fire only after that think; a defensive plan keeps direct
+        // callers from firing without a telegraph.
+        if (!s.aiPlanned) {
+            s.aiTimer = kDuelCpuThinkSec;
+            aiPlan(s);
+            return;
+        }
+        s.game.Fire();
+        s.aiPlanned = false;
+        s.aiAimCol = -1;
+        s.aiFallbackShot = false;
+        s.aiTimer = 0.0f;       // next shot start resets to 0.30
+        return;
+    }
+
+    // Stage mode: preserve the shipped behaviour exactly (including the RNG
+    // call order), only split out the planning half.
+    const bool bounceShot = aiPlan(s);
+    const bool fallback = s.aiFallbackShot;
     s.game.Fire();
-    s.aiTimer = (s.duelMode
-                     ? s.aiInterval + (bounceShot ? 0.15f : 0.0f)
-                     : ((s.sparring
-                             ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
-                             : 1.00f + rnd01() * 0.75f) +
-                        (bounceShot ? 0.15f : 0.0f))) * pace;
+    s.aiPlanned = false;
+    s.aiAimCol = -1;
+    s.aiFallbackShot = false;
+    const float pace = s.aiPace;
+    if (fallback) {
+        s.aiTimer = (s.sparring
+                         ? (2.3f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                         : 0.9f + rnd01() * 0.8f) * pace;
+    } else {
+        s.aiTimer = ((s.sparring
+                          ? (2.2f + 0.25f * (float)(s.game.Moves() % 3)) * s.fireScale
+                          : 1.00f + rnd01() * 0.75f) +
+                     (bounceShot ? 0.15f : 0.0f)) * pace;
+    }
 }
 
 void updateBattle(Side s[2], float dt)

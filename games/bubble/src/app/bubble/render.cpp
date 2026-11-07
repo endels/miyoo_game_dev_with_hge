@@ -564,6 +564,18 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     g->SetTransform(0, 0, 0, 0, 0, 1, 1);
     drawBoard(c, s[1].game, (float)time, false, 1, false);
 
+    // CPU telegraph: during the 0.30 s think, one static 1 px red column on
+    // the CPU board. It starts below the ceiling lip (y=10) and stops 8 px
+    // above the death line (y=470), so it never touches the death line. No
+    // pulse, no fade: at 30 fps the window is only 9 frames.
+    if (hud.duel && hud.turn == 1 && s[1].aiPlanned && s[1].aiTimer > 0.0f &&
+        s[1].aiAimCol >= 0) {
+        const float x0 = s[1].game.X0();
+        const float x = x0 + kR + kD * (float)s[1].aiAimCol;
+        if (x >= x0 + kR && x <= x0 + s[1].game.FieldW() - kR)
+            quad(g, nullptr, x, 10, 1, 452, 0xFFFF2030);
+    }
+
     // Short purple pulse when a corrupted bubble is collected. One full-screen
     // quad for ~0.18 s; no particles and no long-lived effect.
     if (hud.corruptFlash > 0.0f) {
