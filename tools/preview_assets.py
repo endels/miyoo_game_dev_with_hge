@@ -9,10 +9,12 @@ import os
 import math
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-DLG = r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc"
-TILES = os.path.join(DLG, r"FSM_Woods_and_Cave_Tiles\Material\tilesets")
-PARA = os.path.join(DLG, r"parallax_Resource_Pack\material\parallaxes")
-OUT = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\build\preview"
+DLG = os.environ.get("HGE_DLC_ROOT",
+    r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc")
+TILES = os.path.join(DLG, "FSM_Woods_and_Cave_Tiles", "Material", "tilesets")
+PARA = os.path.join(DLG, "parallax_Resource_Pack", "material", "parallaxes")
+OUT = os.environ.get("HGE_PREVIEW_DIR", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "preview"))
 
 T = 48
 

@@ -208,6 +208,41 @@ int Game::Neighbors(int r, int c, int out[6][2]) const
     return n;
 }
 
+int Game::CorruptNeighbors(int r, int c, int color) const
+{
+    int nb[6][2];
+    const int n = Neighbors(r, c, nb);
+    int k = 0;
+    for (int i = 0; i < n; ++i) {
+        const int nr = nb[i][0], nc = nb[i][1];
+        if (m_cell[nr][nc] == color && m_corrupt[nr][nc]) ++k;
+    }
+    return k;
+}
+
+bool Game::PlantCorrupt()
+{
+    int cellR[kMaxRows * kColsMax];
+    int cellC[kMaxRows * kColsMax];
+    int n = 0;
+    for (int r = 0; r < m_rows && r < kMaxRows; ++r) {
+        const int cols = RowCount(r);
+        for (int c = 0; c < cols; ++c) {
+            if (!m_cell[r][c] || m_corrupt[r][c]) continue;
+            cellR[n] = r;
+            cellC[n] = c;
+            ++n;
+        }
+    }
+    if (n == 0) return false;
+    const int pick = (int)(Rand() % (u32)n);
+    m_corrupt[cellR[pick]][cellC[pick]] = true;
+    ++m_corruptTotal;
+    spawnRing(XOf(cellR[pick], cellC[pick]), YOfLive(cellR[pick]),
+              0xFFC080FFu, 2.2f);
+    return true;
+}
+
 int Game::SameNeighbors(int r, int c, int color) const
 {
     int nb[6][2];

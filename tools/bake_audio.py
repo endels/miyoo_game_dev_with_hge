@@ -16,9 +16,13 @@ import struct
 import subprocess
 import sys
 
-DLG = r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc\FSM_Woods_and_Cave_Tiles\FSM_sample02_EN\audio"
-OUT = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\assets\audio.pak"
-FFMPEG = "ffmpeg"
+DLG = os.path.join(os.environ.get("HGE_DLC_ROOT",
+    r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc"),
+    "FSM_Woods_and_Cave_Tiles", "FSM_sample02_EN", "audio")
+OUT = os.environ.get("HGE_AUDIO_PAK", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets", "audio.pak"))
+FFMPEG = os.environ.get("HGE_FFMPEG", "ffmpeg")
 
 # name, source, rate, channels
 ENTRIES = [

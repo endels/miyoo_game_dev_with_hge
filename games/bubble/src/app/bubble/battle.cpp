@@ -84,6 +84,7 @@ void resetBattle(Side s[2])
         s[i].waveSize = kWaveSize;
         s[i].attackBonus = 0;
         s[i].chainPay = false;
+        s[i].duelAI = false;
     }
     s[0].ai = false;
     s[1].ai = true;
@@ -116,7 +117,10 @@ void aiUpdate(Side& s, float dt)
             if (!s.game.Attachable(r, c)) continue;
             if (!reachable(s.game.XOf(r, c), Game::YOf(r))) continue;
             const int same = s.game.SameNeighbors(r, c, want);
-            const int score = same * 100 - r * 3 + (int)(rnd01() * 6.0f);
+            int score = same * 100 - r * 3 + (int)(rnd01() * 6.0f);
+            if (s.duelAI)
+                score += 60 * s.game.CorruptNeighbors(r, c, want);
+
             if (score > bestScore) { bestScore = score; bestR = r; bestC = c; }
         }
     }

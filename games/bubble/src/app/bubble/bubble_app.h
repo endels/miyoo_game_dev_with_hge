@@ -20,6 +20,7 @@ struct BubbleOptions {
     bool        debugChain = false;   // screenshot/test: show a chain hit
     bool        audioStress = false;  // dev: BGM + continuous overlapping SFX
     bool        autoplay = false;     // dev: let a bot drive the player side
+    bool        duel = false;         // turn-based puzzle duel with HP
     int         retries = 3;          // consecutive stage losses before GAME OVER
     std::string selfPath;
 };
@@ -50,6 +51,8 @@ private:
     const char* draftDesc(int option) const;
 
     void updateAudio(float dt);
+    void updateDuel(float dt, const hge::Input& in);
+    void ensureAttackBubbles(int side);
 
     // Dev autoplay: pick a shot by simulating candidate landings on a copy of
     // the player board, then drive the same input path a human would.
@@ -111,6 +114,21 @@ private:
     float m_slowMo = 0.0f;
     int   m_activeShotSpecial = 0;
     float m_audioStressTimer = 0.0f;
+
+    // Turn-based duel (--duel): both sides share the same puzzle layout, take
+    // turns of kDuelShotsShots shots and damage each other by clearing the
+    // purple attack bubbles.
+    bool  m_duel = false;
+    int   m_hp[2] = { 5, 5 };
+    int   m_turn = 0;              // 0 = player, 1 = cpu
+    int   m_shotsLeft = 3;
+    int   m_turnPhase = 0;         // 0 = can shoot, 1 = handing over
+    float m_turnTimer = 0.0f;
+    int   m_lastCp[2] = { 0, 0 };
+    int   m_lastMovesDuel[2] = { 0, 0 };
+    float m_hitFlash = 0.0f;
+    int   m_hitSide = -1;
+    char  m_hitText[32] = { 0 };
 
     bool m_ready = false;
 };

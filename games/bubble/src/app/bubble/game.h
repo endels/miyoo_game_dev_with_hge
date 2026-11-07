@@ -174,6 +174,8 @@ public:
     bool   SolidAt(float x, float y) const { return HitBubble(x, y); }
     bool   HitBubbleCell(float x, float y, int* outR, int* outC) const;
     bool   Attachable(int r, int c) const { return IsAttachable(r, c); }
+    int    CorruptNeighbors(int r, int c, int color) const;
+    bool   PlantCorrupt();      // duel: seed one more attack bubble
     int    SameNeighbors(int r, int c, int color) const;
 
     // an empty board in versus mode just keeps going

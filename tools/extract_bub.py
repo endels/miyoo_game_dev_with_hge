@@ -13,8 +13,11 @@ from collections import deque
 
 from PIL import Image, ImageDraw, ImageFont
 
-SRC = r"G:\work\基于rpgmaker素材的游戏制作\经典泡泡龙 图资\经典泡泡龙 sprites.png"
-OUT = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\build\preview"
+SRC = os.path.join(os.environ.get("HGE_ART_ROOT",
+    r"G:\work\基于rpgmaker素材的游戏制作\经典泡泡龙 图资"),
+    "经典泡泡龙 sprites.png")
+OUT = os.environ.get("HGE_PREVIEW_DIR", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "preview"))
 
 BG = {(147, 187, 236), (50, 97, 168), (96, 136, 176), (136, 160, 216)}
 

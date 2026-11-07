@@ -15,6 +15,7 @@ struct Side {
     int   lastPops;
     int   lastDrops;
     bool  ai;
+    bool  duelAI;           // duel mode: value shots next to attack bubbles
 
     // Stage tuning. The defaults reproduce the original endless-versus AI;
     // resetStage-style setup can slow the AI down and delay garbage.

@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import extract_bub as E
 import bake_game_assets as B
 
-OUT = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\build\preview"
+OUT = os.environ.get("HGE_PREVIEW_DIR", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "preview"))
 
 
 def to40_lanczos(src):

@@ -24,9 +24,17 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageFilter
 import preview_assets as pa
 from mock_level1 import BUBBLES, normalize, bubble_at_size, cover
 
-ENGINE = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl"
+ENGINE = os.environ.get(
+    "HGE_ENGINE",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_PAK = os.path.join(ENGINE, "assets", "game.pak")
-PARA = r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc\parallax_Resource_Pack\material\parallaxes"
+PARA = os.path.join(os.environ.get("HGE_DLC_ROOT",
+    r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc"),
+    "parallax_Resource_Pack", "material", "parallaxes")
+
+FONT_DIR = os.environ.get(
+    "HGE_FONT_DIR",
+    r"C:\Windows\Fonts" if os.name == "nt" else "/mnt/c/Windows/Fonts")
 
 WIN_W, WIN_H = 960, 540
 
@@ -38,7 +46,9 @@ def to_bgra(im):
     return Image.merge("RGBA", (b, g, r, a))
 
 
-ARCADE = r"G:\work\基于rpgmaker素材的游戏制作\经典泡泡龙 图资\经典泡泡龙 sprites.png"
+ARCADE = os.path.join(os.environ.get("HGE_ART_ROOT",
+    r"G:\work\基于rpgmaker素材的游戏制作\经典泡泡龙 图资"),
+    "经典泡泡龙 sprites.png")
 
 # Large bubble band (y0, y1) per colour index 1..6:
 # yellow, blue, green, red, purple, pink
@@ -258,7 +268,7 @@ def make_wave(w=160, h=64):
 def make_font():
     path = None
     for name in ("consola.ttf", "consolab.ttf", "arial.ttf"):
-        p = os.path.join(r"C:\Windows\Fonts", name)
+        p = os.path.join(FONT_DIR, name)
         if os.path.exists(p):
             path = p
             break

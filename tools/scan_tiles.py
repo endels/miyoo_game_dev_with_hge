@@ -80,7 +80,8 @@ def main():
         if len(picked) >= 24:
             break
 
-    OUT = os.path.join(r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\build\preview")
+    OUT = os.environ.get("HGE_PREVIEW_DIR", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "preview"))
     os.makedirs(OUT, exist_ok=True)
     f = pa.font(11)
     cellw = 112

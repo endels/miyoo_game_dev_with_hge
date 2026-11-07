@@ -33,6 +33,14 @@ struct HudState {
     int   chainCount = 0;
     float shake = 0.0f;
     float shakeAmp = 0.0f;
+
+    // turn-based duel
+    bool  duel = false;
+    int   hp[2] = { 0, 0 };
+    int   turn = 0;
+    int   shotsLeft = 0;
+    const char* hitText = nullptr;
+    float hitFlash = 0.0f;
 };
 
 struct RenderCtx {

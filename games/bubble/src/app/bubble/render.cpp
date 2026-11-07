@@ -531,7 +531,45 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     quad(g, nullptr, kCenterX + kCenterW - 1, 0, 1, WIN_H, 0xFF2A3648);
     quad(g, nullptr, kCenterX, 0, kCenterW, WIN_H, 0x40060910);
 
-    if (hud.phase == 0) {
+    if (hud.phase == 0 && hud.duel) {
+        centreText(c, kCenterX + kCenterW * 0.5f, 8, "DUEL", 1.0f, 0xFFEAF0FA);
+        const char* turnTxt = (hud.turn == 0) ? "YOUR TURN" : "CPU TURN";
+        centreText(c, kCenterX + kCenterW * 0.5f, 36, turnTxt, 1.0f,
+                   hud.turn == 0 ? 0xFFFFD24A : 0xFF6FA8FF);
+
+        const float cellW = 16.0f, gap = 5.0f;
+        const float totalW = 5 * cellW + 4 * gap;
+        const float x0 = kCenterX + (kCenterW - totalW) * 0.5f;
+
+        centreText(c, kCenterX + kCenterW * 0.5f, 66, "YOU", 1.0f, 0xFFFFD24A);
+        for (int i = 0; i < 5; ++i) {
+            const u32 col = (i < hud.hp[0]) ? 0xFFFFD24A : 0x505A6A82;
+            quad(g, nullptr, x0 + i * (cellW + gap), 84, cellW, cellW, col);
+        }
+
+        centreText(c, kCenterX + kCenterW * 0.5f, 112, "CPU", 1.0f, 0xFF6FA8FF);
+        for (int i = 0; i < 5; ++i) {
+            const u32 col = (i < hud.hp[1]) ? 0xFF6FA8FF : 0x505A6A82;
+            quad(g, nullptr, x0 + i * (cellW + gap), 130, cellW, cellW, col);
+        }
+
+        char shots[32];
+        snprintf(shots, sizeof(shots), "SHOTS %d", hud.shotsLeft);
+        centreText(c, kCenterX + kCenterW * 0.5f, 170, shots, 1.0f, 0xFFEAF0FA);
+
+        if (hud.hitText && hud.hitFlash > 0.0f && hud.hitText[0]) {
+            float k = hud.hitFlash / 0.55f;
+            if (k > 1.0f) k = 1.0f;
+            const u32 a = (u32)(255.0f * k);
+            centreText(c, kCenterX + kCenterW * 0.5f, 210, hud.hitText, 1.0f,
+                       (a << 24) | 0x00FF8080);
+        }
+
+        centreText(c, kCenterX + kCenterW * 0.5f, 240, "PURPLE = DAMAGE", 1.0f,
+                   0xFFC9A6FF);
+        centreText(c, kCenterX + kCenterW * 0.5f, 470, "3 SHOTS EACH", 1.0f,
+                   0xFF8FA6C4);
+    } else if (hud.phase == 0) {
     {
         char stageBuf[24];
         snprintf(stageBuf, sizeof(stageBuf), "STAGE %d", hud.stage);
@@ -615,10 +653,13 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
     // ---- stage overlays ----------------------------------------------
     if (hud.phase == 1) {               // CLEAR
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xD8000000);
-        centreText(c, WIN_W * 0.5f, 180, "STAGE CLEAR", 3.0f, 0xFFFFE08A);
+        centreText(c, WIN_W * 0.5f, 180,
+                   hud.duel ? "YOU WIN" : "STAGE CLEAR", 3.0f, 0xFFFFE08A);
         if (hud.perfect)
             centreText(c, WIN_W * 0.5f, 238, "PERFECT", 1.5f, 0xFFFFD24A);
-        centreText(c, WIN_W * 0.5f, 320, "PRESS FIRE", 1.0f, 0xFF9FB3CE);
+        centreText(c, WIN_W * 0.5f, 320,
+                   hud.duel ? "PRESS FIRE TO PLAY AGAIN" : "PRESS FIRE",
+                   1.0f, 0xFF9FB3CE);
     } else if (hud.phase == 2) {        // DRAFT
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xF4000000);
         centreText(c, WIN_W * 0.5f, 62, "CHOOSE A MOD", 2.0f, 0xFFEAF0FA);
@@ -664,6 +705,29 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
         quad(g, nullptr, 0, 0, WIN_W, WIN_H, 0xF8000000);
 
         char buf[64];
+        if (hud.duel) {
+            centreText(c, WIN_W * 0.5f, 40, "DUEL", 2.5f, 0xFFEAF0FA);
+            centreText(c, WIN_W * 0.5f, 120, "3 SHOTS EACH", 1.5f, 0xFFEAF0FA);
+
+            const float icon = 90.0f;
+            const float ix = WIN_W * 0.5f - icon * 0.5f;
+            const float iy = 180.0f;
+            quad(g, c.bubbles[3], ix, iy, icon, icon, 0xFFFFFFFF);
+            const float pulse = 0.5f + 0.5f * sinf((float)time * 5.0f);
+            const u32 ringA = (u32)(150.0f + 90.0f * pulse);
+            quad(g, c.ring, ix, iy, icon, icon, (ringA << 24) | 0x00B060FF);
+            centreText(c, WIN_W * 0.5f, iy + 18.0f, "!", 2.0f, 0xFFFFE0FF);
+
+            centreText(c, WIN_W * 0.5f, 290, "POP PURPLE BUBBLES TO DAMAGE THE CPU",
+                       1.0f, 0xFFC9A6FF);
+            centreText(c, WIN_W * 0.5f, 326, "TURNS: YOU 3 SHOTS, THEN CPU 3 SHOTS",
+                       1.0f, 0xFF9FB3CE);
+            centreText(c, WIN_W * 0.5f, 360, "FIRST SIDE AT 0 HP LOSES",
+                       1.0f, 0xFF9FB3CE);
+            centreText(c, WIN_W * 0.5f, 394, "PURPLE BUBBLES RESPAWN EACH TURN",
+                       1.0f, 0xFF9FB3CE);
+            centreText(c, WIN_W * 0.5f, 455, "PRESS FIRE TO START", 1.0f, 0xFF8FA6C4);
+        } else {
         snprintf(buf, sizeof(buf), "STAGE %d", hud.stage);
         centreText(c, WIN_W * 0.5f, 40, buf, 2.5f, 0xFFEAF0FA);
 
@@ -701,6 +765,7 @@ void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,
             centreText(c, WIN_W * 0.5f, 426, buf, 1.0f, 0xFFFFD24A);
         }
         centreText(c, WIN_W * 0.5f, 455, "PRESS FIRE TO START", 1.0f, 0xFF8FA6C4);
+        }
     } else if (hud.banner && hud.bannerTimer > 0.0f) {
         centreText(c, kCenterX + kCenterW * 0.5f, 420.0f, hud.banner, 1.0f,
                    0xFFFFD24A);

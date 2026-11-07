@@ -7,6 +7,7 @@
 //   bubble_level1 --autoplay   dev: a bot plays the player board
 //   bubble_level1 --retries N  consecutive stage losses before GAME OVER (default 3)
 //   bubble_level1 --mute       silent run (audio callback keeps ticking)
+//   bubble_level1 --duel       turn-based puzzle duel (3 shots each, HP)
 //   --debug-clear / --debug-draft  jump to a screenshot state (development)
 
 #include "hge_app.h"
@@ -34,6 +35,7 @@ struct Options {
     bool        debugChain = false;
     bool        audioStress = false;
     bool        autoplay = false;
+    bool        duel = false;
     bool        mute = false;
     int         retries = 3;
     double      fixedDt = 0.0;
@@ -62,6 +64,7 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--debug-chain")) o.debugChain = true;
         else if (!strcmp(argv[i], "--audio-stress")) o.audioStress = true;
         else if (!strcmp(argv[i], "--autoplay")) o.autoplay = true;
+        else if (!strcmp(argv[i], "--duel")) o.duel = true;
         else if (!strcmp(argv[i], "--mute")) o.mute = true;
         else if (!strcmp(argv[i], "--retries") && i + 1 < argc) o.retries = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fixed-dt") && i + 1 < argc) o.fixedDt = atof(argv[++i]);
@@ -131,6 +134,7 @@ int runGame(int argc, char** argv)
     gameOpt.debugChain = opts.debugChain;
     gameOpt.audioStress = opts.audioStress;
     gameOpt.autoplay = opts.autoplay;
+    gameOpt.duel = opts.duel;
     if (opts.mute) audio::SetMuted(true);
     gameOpt.retries = opts.retries;
     if (argc > 0 && argv[0]) gameOpt.selfPath = argv[0];

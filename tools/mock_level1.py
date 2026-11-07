@@ -11,8 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import preview_assets as pa
 
-OUT = r"G:\work\基于rpgmaker素材的游戏制作\engine\hge-sdl\build\preview"
-PARA = r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc\parallax_Resource_Pack\material\parallaxes"
+OUT = os.environ.get("HGE_PREVIEW_DIR", os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "preview"))
+PARA = os.path.join(os.environ.get("HGE_DLC_ROOT",
+    r"F:\SteamLibrary\steamapps\common\RPG Maker MV\dlc"),
+    "parallax_Resource_Pack", "material", "parallaxes")
 
 W, H = 960, 540
 FIELD_W = 640
@@ -31,10 +34,14 @@ BUBBLES = [
 ]
 
 
+FONT_DIR = os.environ.get(
+    "HGE_FONT_DIR",
+    r"C:\Windows\Fonts" if os.name == "nt" else "/mnt/c/Windows/Fonts")
+
 def font(sz, bold=False):
     names = ["msyhbd.ttc" if bold else "msyh.ttc", "arialbd.ttf" if bold else "arial.ttf"]
     for n in names:
-        p = os.path.join(r"C:\Windows\Fonts", n)
+        p = os.path.join(FONT_DIR, n)
         if os.path.exists(p):
             try:
                 return ImageFont.truetype(p, sz)
