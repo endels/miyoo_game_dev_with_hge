@@ -772,10 +772,10 @@ void BubbleApp::setAiLevel(int level, const char* why)
 
     const AiLevelInfo& lv = aiLevelInfo(m_aiLevel);
     fprintf(stderr,
-            "[ai] %s level=%d (%s) interval=%.2f jitter=%.0f focus=%.2f "
-            "bounce=%.2f atk+%d\n",
-            why, m_aiLevel, lv.name, lv.interval, lv.jitter, lv.focusW, lv.bounce,
-            lv.atkBonus);
+            "[ai] %s level=%d (%s) jitter=%.0f sim=%d focus=%.2f "
+            "bounce=%.2f self=%.2f@%d blunder=%.2f\n",
+            why, m_aiLevel, lv.name, lv.jitter, lv.simN, lv.focusW,
+            lv.bounce, lv.wSelf, lv.selfDepth, lv.blunder);
     if (m_cStick) audio::Play(*m_cStick, 0.30f);
 }
 

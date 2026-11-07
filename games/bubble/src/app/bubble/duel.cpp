@@ -318,16 +318,6 @@ void DuelMatch::settleShot(int side)
     const int drops = g.Drops() - m_baseDrops[side];
     int atk = DuelAttackForShot(pops, drops);
 
-    // AI6: the top two levels convert a connecting shot into more garbage. Aim
-    // stopped paying off once the bot was already accurate (an A/B over 40
-    // seeds found no gain from replaying candidates), so SHARP and MASTER buy
-    // raw attack power instead; NORMAL, the default, buys nothing.
-    const int bonus = aiLevelInfo(m_sides[side].aiLevel).atkBonus;
-    if (atk > 0 && bonus > 0) {
-        atk += bonus;
-        if (atk > kAttackCapPerShot + bonus) atk = kAttackCapPerShot + bonus;
-    }
-
     // A7.1: clearing the whole board is a one-off attack, then play continues.
     if (g.GetState() == Game::WIN) {
         atk += kClearBoardBonus;

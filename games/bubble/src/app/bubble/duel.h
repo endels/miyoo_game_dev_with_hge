@@ -24,7 +24,7 @@ const int   kDescendFast1Shots  = 3;      // T4 (global >= kSuddenDeath1Shots)
 const int   kDescendFast2Shots  = 2;      // T5 (global >= kSuddenDeath2Shots)
 const int   kSuddenDeath1Shots  = 100;
 const int   kSuddenDeath2Shots  = 160;
-const int   kMaxGlobalShots     = 300;    // T6: hard stop -> DRAW
+const int   kMaxGlobalShots     = 200;    // T6: hard stop -> DRAW
 const int   kAttackCapPerShot   = 8;      // A7
 const int   kClearBoardBonus    = 6;      // A7.1
 const int   kDepthMax           = 13;     // DepthRows() >= this = over the line
@@ -112,6 +112,13 @@ public:
     // CPU difficulty dial (battle.h). Applies at once and survives rematches;
     // no rule value depends on it.
     void SetAiLevel(int level);
+    // Measurement hook for --duel-ai-levels: apply different levels to the two
+    // bot sides after Reset() (Reset still seeds the boards and defaults).
+    void SetAiLevels(int playerLevel, int cpuLevel) {
+        aiApplyLevel(m_sides[0], aiClampLevel(playerLevel));
+        aiApplyLevel(m_sides[1], aiClampLevel(cpuLevel));
+        m_aiLevel = aiClampLevel(cpuLevel);
+    }
     int  AiLevel() const { return m_aiLevel; }
 
     // ---- read-only state for the app and the HUD

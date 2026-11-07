@@ -72,12 +72,12 @@ int aiClampLevel(int level)
 const AiLevelInfo& aiLevelInfo(int level)
 {
     static const AiLevelInfo kTable[kAiLevels] = {
-        // name      interval jitter focus  bounce atk  pace
-        { "EASY",     0.95f,  34.0f, 0.00f, 0.00f, 0, 1.60f },
-        { "CASUAL",   0.75f,  24.0f, 0.10f, 0.25f, 0, 1.30f },
-        { "NORMAL",   0.55f,  14.0f, 0.30f, 0.60f, 0, 1.00f },
-        { "SHARP",    0.42f,   8.0f, 0.55f, 0.85f, 1, 0.75f },
-        { "MASTER",   0.32f,   3.0f, 0.85f, 1.00f, 2, 0.55f },
+        // name      jitter simN wDrop focus  wSelf self blunder bounce pace
+        { "EASY",     40.0f,  0,    0, 0.00f, 0.0f, 0, 0.35f, 0.00f, 1.60f },
+        { "CASUAL",   45.0f,  0,    0, 0.00f, 0.0f, 0, 0.20f, 0.25f, 1.30f },
+        { "NORMAL",   16.0f,  0,    0, 0.00f, 0.0f, 0, 0.00f, 0.00f, 1.00f },
+        { "SHARP",    10.0f,  8,   90, 0.55f, 1.2f, 8, 0.00f, 0.85f, 0.75f },
+        { "MASTER",    2.0f, 18,  110, 0.85f, 1.6f, 7, 0.00f, 1.00f, 0.55f },
     };
     return kTable[aiClampLevel(level) - 1];
 }
@@ -87,11 +87,15 @@ void aiApplyLevel(Side& s, int level)
     level = aiClampLevel(level);
     const AiLevelInfo& lv = aiLevelInfo(level);
     s.aiLevel = level;
-    s.aiInterval = lv.interval;
     s.aiJitter = lv.jitter;
     s.aiFocusW = lv.focusW;
     s.aiBounceP = lv.bounce;
     s.aiPace = lv.pace;
+    s.aiSimN = lv.simN;
+    s.aiWDrop = lv.wDrop;
+    s.aiWSelf = lv.wSelf;
+    s.aiSelfDepth = lv.selfDepth;
+    s.aiBlunder = lv.blunder;
     // HGE_AI_BOUNCE is the old dev A/B knob for the wall shot; it still wins.
     const char* e = getenv("HGE_AI_BOUNCE");
     if (e) s.aiBounceP = (float)atof(e);
@@ -108,6 +112,12 @@ void resetBattle(Side s[2])
         s[i].aiPlanned = false;
         s[i].aiAimCol = -1;
         s[i].aiFallbackShot = false;
+        s[i].aiCandCount = 0;
+        s[i].aiTopCount = 0;
+        s[i].aiSimCursor = 0;
+        s[i].aiHaveChoice = false;
+        s[i].aiChosenR = -1;
+        s[i].aiChosenC = -1;
         s[i].lastPops = s[i].game.Pops();
         s[i].lastDrops = s[i].game.Drops();
         s[i].sparring = false;
@@ -125,13 +135,17 @@ void resetBattle(Side s[2])
         s[i].duelMode = false;
         s[i].aiFocusCol = -1;
         aiApplyLevel(s[i], kAiLevelDefault);
+        // Stage shipped with jitter 14; duel's NORMAL is 12. Keep the stage
+        // stream bit-identical (--sim-only checksum).
+        s[i].aiJitter = 14.0f;
+        s[i].aiBounceP = 0.60f;
         s[i].aiFocusW = 0.0f;   // stage AI has no column bias
     }
     s[0].ai = false;
     s[1].ai = true;
 }
 
-bool aiPlan(Side& s)
+static bool aiPlanStage(Side& s)
 {
     // Score every attachable empty cell: matching neighbours matter most,
     // then prefer higher cells so the stack does not creep downwards.
@@ -245,6 +259,231 @@ bool aiPlan(Side& s)
     return bounceShot;
 }
 
+// ---- duel planner -------------------------------------------------------
+struct SimShot {
+    int pops;
+    int drops;
+    int depthAfter;
+    int landCol;
+    bool lost;
+};
+
+static Game g_replayGame;
+
+static void replayShot(const Game& src, float aimX, float aimY, SimShot& out)
+{
+    g_replayGame = src;
+    g_replayGame.AimAt(aimX, aimY);
+    g_replayGame.Fire();
+    int guard = 0;
+    while (g_replayGame.GetState() == Game::FLY && guard++ < 800)
+        g_replayGame.Update(1.0f / 60.0f);
+    out.lost = (g_replayGame.GetState() == Game::LOSE);
+    out.pops = g_replayGame.Pops() - src.Pops();
+    out.drops = g_replayGame.Drops() - src.Drops();
+    out.depthAfter = g_replayGame.DepthRows();
+    out.landCol = g_replayGame.LastLandCol();
+}
+
+static int deepestColWithColor(const Game& g, int color)
+{
+    int best = -1, bestD = -1;
+    for (int c = 0; c < kBoardCols; ++c) {
+        const int d = g.ColumnDepth(c);
+        if (d <= 0) continue;
+        if (g.Cell(d - 1, c) != color) continue;
+        if (d > bestD) { bestD = d; best = c; }
+    }
+    return best;
+}
+
+static int sameClusterSize(const Game& g, int r0, int c0, int color)
+{
+    static const int kMaxCells = kMaxRows * kColsMax;
+    int qr[kMaxCells], qc[kMaxCells];
+    bool seen[kMaxRows][kColsMax] = {{ false }};
+    int head = 0, tail = 0;
+    seen[r0][c0] = true;
+    qr[tail] = r0;
+    qc[tail++] = c0;
+    int cluster = 1;
+    const float x0 = g.XOf(r0, c0);
+    const float y0 = Game::YOf(r0);
+    while (head < tail) {
+        const int r = qr[head], c = qc[head++];
+        for (int nr = r - 1; nr <= r + 1; ++nr) {
+            if (nr < 0 || nr >= kMaxRows) continue;
+            const int n = g.RowCount(nr);
+            for (int nc = 0; nc < n; ++nc) {
+                if (seen[nr][nc] || g.Cell(nr, nc) != color) continue;
+                const float dx = fabsf(g.XOf(nr, nc) - g.XOf(r, c));
+                const float dy = fabsf(Game::YOf(nr) - Game::YOf(r));
+                const bool adjacent =
+                    (fabsf(dx - kD) < 1.0f && dy < 1.0f) ||
+                    (fabsf(dx - kD * 0.5f) < 1.0f && fabsf(dy - kRowH) < 1.0f);
+                if (!adjacent) continue;
+                seen[nr][nc] = true;
+                qr[tail] = nr;
+                qc[tail++] = nc;
+                ++cluster;
+            }
+        }
+    }
+    (void)x0;
+    (void)y0;
+    return cluster;
+}
+
+static int estimatedDrops(const Game& g, int r, int c, int color)
+{
+    const int cluster = sameClusterSize(g, r, c, color);
+    return cluster >= 5 ? cluster - 3 : 0;
+}
+static void aiStepDuel(Side& s)
+{
+    if (s.aiSimN <= 0 || !s.aiHaveChoice) return;
+    if (s.aiSimCursor >= s.aiTopCount) return;
+
+    const int idx = s.aiTopIdx[s.aiSimCursor++];
+    const int r = s.aiCandR[idx];
+    const int c = s.aiCandC[idx];
+    const float tx = s.game.XOf(r, c) + s.aiJitterDx;
+    const float ty = Game::YOf(r);
+
+    SimShot sim;
+    replayShot(s.game, tx, ty, sim);
+    if (sim.lost) return;
+
+    float v = 100.0f * (float)sim.pops + (float)(s.aiWDrop * sim.drops);
+    if (s.aiFocusCol >= 0 && sim.landCol == s.aiFocusCol)
+        v += s.aiFocusW * 120.0f;
+    if (s.aiWSelf > 0.0f && s.aiDepthBefore >= s.aiSelfDepth) {
+        const int rescued = s.aiDepthBefore - sim.depthAfter;
+        if (rescued > 0) v += s.aiWSelf * 80.0f * (float)rescued;
+    }
+
+    if (v > s.aiSimBest) {
+        s.aiSimBest = v;
+        s.aiChosenR = r;
+        s.aiChosenC = c;
+        s.aiChosenX = tx;
+        s.aiChosenY = ty;
+        s.aiAimCol = sim.landCol >= 0 ? sim.landCol : c;
+        s.game.AimAt(tx, ty);
+    }
+}
+
+bool aiPlan(Side& s)
+{
+    if (!s.duelMode) return aiPlanStage(s);
+
+    s.aiCandCount = 0;
+    s.aiTopCount = 0;
+    s.aiSimCursor = 0;
+    s.aiSimBest = -1.0e9f;
+    s.aiHaveChoice = false;
+    s.aiDepthBefore = s.game.DepthRows();
+    s.aiChosenR = s.aiChosenC = -1;
+
+    // MASTER targets the deepest column whose top bubble matches the hand
+    // colour; lower levels use the deepest column set by DuelMatch.
+    int focusCol = s.aiFocusCol;
+    if (s.aiLevel >= kAiLevels) {
+        const int c = deepestColWithColor(s.game, s.game.CurrentColor());
+        if (c >= 0) focusCol = c;
+    }
+    s.aiFocusCol = focusCol;
+
+    const int want = s.game.CurrentColor();
+    const int topNeed = s.aiSimN > 0 ? s.aiSimN : 4;
+    for (int r = 0; r <= s.game.RowsUsed() && r < kMaxRows; ++r) {
+        const int n = s.game.RowCount(r);
+        for (int c = 0; c < n; ++c) {
+            if (s.game.Cell(r, c)) continue;
+            if (!s.game.Attachable(r, c)) continue;
+            if (!lineClear(s.game, s.game.ShooterX(), kShooterY,
+                           s.game.XOf(r, c), Game::YOf(r))) continue;
+
+            const int same = s.game.SameNeighbors(r, c, want);
+            const int estD = estimatedDrops(s.game, r, c, want);
+            int score = same * 100 - r * 3 + (int)(rnd01() * 6.0f);
+            if (s.aiWDrop > 0)
+                score += s.aiWDrop * estD;
+
+            if (focusCol >= 0 && s.aiFocusW > 0.0f && c == focusCol)
+                score += (int)(s.aiFocusW * 120.0f);
+
+            if (s.aiCandCount < 128) {
+                const int i = s.aiCandCount++;
+                s.aiCandR[i] = r;
+                s.aiCandC[i] = c;
+                s.aiCandV0[i] = score;
+                int pos = 0;
+                while (pos < s.aiTopCount &&
+                       s.aiCandV0[s.aiTopIdx[pos]] >= score) ++pos;
+                if (pos < topNeed) {
+                    int last = s.aiTopCount < topNeed ? s.aiTopCount : topNeed - 1;
+                    for (int j = last; j > pos; --j)
+                        s.aiTopIdx[j] = s.aiTopIdx[j - 1];
+                    s.aiTopIdx[pos] = i;
+                    if (s.aiTopCount < topNeed) ++s.aiTopCount;
+                }
+            }
+        }
+    }
+
+    if (s.aiTopCount == 0) {
+        const float miss = 40.0f;
+        const float tx = s.game.ShooterX() + (rnd01() - 0.5f) * miss;
+        s.game.AimAt(tx, 120.0f);
+        int col = (int)((tx - s.game.X0()) / kD);
+        if (col < 0) col = 0;
+        if (col >= kBoardCols) col = kBoardCols - 1;
+        s.aiAimCol = col;
+        s.aiPlanned = true;
+        s.aiFallbackShot = true;
+        return false;
+    }
+
+    int pick = s.aiTopIdx[0];
+    if (s.aiBlunder > 0.0f && rnd01() < s.aiBlunder) {
+        const int bestC = s.aiCandC[pick];
+        int pool[128];
+        int poolN = 0;
+        if (s.aiLevel == 1) {
+            for (int i = 0; i < s.aiCandCount; ++i)
+                if (abs(s.aiCandC[i] - bestC) >= 2) pool[poolN++] = i;
+            if (poolN == 0)
+                for (int i = 0; i < s.aiCandCount; ++i) pool[poolN++] = i;
+            pick = pool[(int)(rnd01() * (float)poolN) % poolN];
+        } else {
+            // CASUAL: pick one of the next three V0 candidates; prefer an
+            // actually-different column so the miss is readable.
+            for (int k = 1; k < s.aiTopCount && k <= 3; ++k) {
+                const int idx = s.aiTopIdx[k];
+                if (abs(s.aiCandC[idx] - bestC) >= 2) pool[poolN++] = idx;
+            }
+            if (poolN == 0)
+                for (int k = 1; k < s.aiTopCount && k <= 3; ++k)
+                    pool[poolN++] = s.aiTopIdx[k];
+            if (poolN > 0) pick = pool[(int)(rnd01() * (float)poolN) % poolN];
+        }
+    }
+
+    s.aiChosenR = s.aiCandR[pick];
+    s.aiChosenC = s.aiCandC[pick];
+    s.aiJitterDx = (rnd01() - 0.5f) * s.aiJitter;
+    s.aiChosenX = s.game.XOf(s.aiChosenR, s.aiChosenC) + s.aiJitterDx;
+    s.aiChosenY = Game::YOf(s.aiChosenR);
+    s.game.AimAt(s.aiChosenX, s.aiChosenY);
+    s.aiAimCol = s.aiChosenC;
+    s.aiPlanned = true;
+    s.aiHaveChoice = true;
+    if (s.aiSimN > 0) s.aiTopCount = s.aiTopCount < s.aiSimN
+                                           ? s.aiTopCount : s.aiSimN;
+    return false;
+}
+
 void aiUpdate(Side& s, float dt)
 {
     if (s.stun > 0.0f) {
@@ -252,29 +491,28 @@ void aiUpdate(Side& s, float dt)
         return;
     }
     if (s.game.GetState() != Game::AIM) return;
+    if (s.duelMode) aiStepDuel(s);
     s.aiTimer -= dt;
     if (s.aiTimer > 0.0f) return;
 
     if (s.duelMode) {
-        // DuelMatch plans the shot and sets 0.30 s on the first frame of each
-        // shot. Fire only after that think; a defensive plan keeps direct
-        // callers from firing without a telegraph.
         if (!s.aiPlanned) {
             s.aiTimer = kDuelCpuThinkSec;
             aiPlan(s);
             return;
         }
+        // Replays are paced by the caller (one per rendered frame); if the
+        // timer expires first, fire with the best candidate found so far.
         s.game.Fire();
         s.aiPlanned = false;
         s.aiAimCol = -1;
         s.aiFallbackShot = false;
-        s.aiTimer = 0.0f;       // next shot start resets to 0.30
+        s.aiHaveChoice = false;
+        s.aiTimer = 0.0f;
         return;
     }
 
-    // Stage mode: preserve the shipped behaviour exactly (including the RNG
-    // call order), only split out the planning half.
-    const bool bounceShot = aiPlan(s);
+    const bool bounceShot = aiPlanStage(s);
     const bool fallback = s.aiFallbackShot;
     s.game.Fire();
     s.aiPlanned = false;

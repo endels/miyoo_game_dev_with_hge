@@ -42,6 +42,9 @@ struct Options {
     bool        mute = false;
     int         retries = 3;
     int         aiLevel = bbl::kAiLevelDefault;
+    bool        aiLevelsGiven = false;
+    int         aiLevelP = bbl::kAiLevelDefault;
+    int         aiLevelC = bbl::kAiLevelDefault;
     double      fixedDt = 0.0;
     bool        duelSim = false;
     unsigned    seed = 1u;
@@ -76,6 +79,14 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--mute")) o.mute = true;
         else if (!strcmp(argv[i], "--retries") && i + 1 < argc) o.retries = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--ai-level") && i + 1 < argc) o.aiLevel = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--duel-ai-levels") && i + 1 < argc) {
+            int a = 0, b = 0;
+            if (sscanf(argv[++i], "%d,%d", &a, &b) == 2) {
+                o.aiLevelsGiven = true;
+                o.aiLevelP = a;
+                o.aiLevelC = b;
+            }
+        }
         else if (!strcmp(argv[i], "--fixed-dt") && i + 1 < argc) o.fixedDt = atof(argv[++i]);
         else if (!strcmp(argv[i], "--shot-frame") && i + 1 < argc) {
             o.shotFrame = atoi(argv[++i]);
@@ -126,8 +137,9 @@ int runDuelSim(const Options& o)
     const int maxFrames = (o.simOnly > 0.0) ? (int)(o.simOnly / step + 0.5) : 400000;
 
     bbl::DuelMatch m;
-    m.SetAiLevel(o.aiLevel);
     m.Reset(o.seed);
+    if (o.aiLevelsGiven) m.SetAiLevels(o.aiLevelP, o.aiLevelC);
+    else m.SetAiLevel(o.aiLevel);
 
     int frames = 0;
     while (frames < maxFrames && m.Result() == bbl::kDuelRunning) {
@@ -178,7 +190,7 @@ int runGame(int argc, char** argv)
         return runDuelSim(opts);
 
     if (opts.simOnly >= 0.0) {
-        if (opts.duel) return runDuelSim(opts);
+        if (opts.duel || opts.aiLevelsGiven) return runDuelSim(opts);
         return runSimOnly(opts);
     }
 

@@ -25,7 +25,6 @@ struct Side {
     // duel v2: the AI is the same greedy shooter, but it cares about the
     // column its attack will land in (AI4) and fires on the duel clock.
     bool  duelMode;
-    float aiInterval;       // seconds between bot shots (AI2)
     int   aiFocusCol;       // column to favour (-1 = no preference)
     float aiFocusW;         // weight of the column preference (AI4)
 
@@ -35,6 +34,30 @@ struct Side {
     float aiJitter;         // aim noise in px
     float aiBounceP;        // chance to even consider a wall shot
     float aiPace;           // stage mode: shot delay multiplier
+    int   aiSimN;           // duel: candidates to physics-replay
+    int   aiWDrop;          // duel: V1 weight on dropped bubbles
+    float aiWSelf;          // duel: V1 weight on reducing own depth
+    int   aiSelfDepth;      // duel: self-rescue trigger depth
+    float aiBlunder;        // duel: deliberate miss chance
+
+    // Duel planner scratch. Candidate cells and the top-N replay list are
+    // rebuilt by aiPlan(); aiUpdate() consumes at most one replay per frame.
+    int   aiCandCount;
+    int   aiCandR[128];
+    int   aiCandC[128];
+    int   aiCandV0[128];
+    int   aiTopIdx[24];
+    int   aiTopCount;
+    int   aiSimCursor;
+    int   aiDepthBefore;
+    int   aiChosenR;
+    int   aiChosenC;
+    float aiChosenX;
+    float aiChosenY;
+    float aiJitterDx;
+    bool  aiHaveChoice;
+    int   aiSimBestCol;
+    float aiSimBest;
 
     // Stage tuning. The defaults reproduce the original endless-versus AI;
     // resetStage-style setup can slow the AI down and delay garbage.
@@ -64,11 +87,14 @@ const float kDuelCpuThinkSec = 0.30f;
 
 struct AiLevelInfo {
     const char* name;
-    float interval;     // duel: seconds between CPU shots (AI2)
     float jitter;       // aim noise, px
+    int   simN;         // duel: top-N candidates replayed with real physics
+    int   wDrop;        // duel: V1 weight on dropped bubbles
     float focusW;       // weight on the opponent's deepest column (AI4)
+    float wSelf;        // duel: V1 weight on reducing own depth
+    int   selfDepth;    // duel: self-rescue trigger depth
+    float blunder;      // duel: deliberate miss chance
     float bounce;       // wall-shot consideration chance
-    int   atkBonus;     // extra garbage on every shot that connects (AI6)
     float pace;         // stage mode: shot delay multiplier
 };
 
