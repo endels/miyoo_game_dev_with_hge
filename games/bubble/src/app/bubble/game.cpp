@@ -384,6 +384,10 @@ int Game::PushGarbage(const int* cols, int count)
         Riser r;
         r.col   = cols ? cols[i] : (int)(Rand() % (u32)m_cols);
         r.x     = m_x0 + kR + (float)r.col * kD;
+        // Explicit columns come from duel's per-turn budget; keep the landing
+        // in that column so the budget maps 1:1 to depth growth. Stage garbage
+        // (cols == nullptr) still uses the old nearest-cell fallback.
+        r.exact = (cols != nullptr);
         // Start just under the field so the wave comes in from the bottom edge,
         // with a little jitter so it never reads as one solid bar.
         r.y     = 566.0f + (float)(i % 3) * 13.0f + (float)(Rand() % 41) - 20.0f;
@@ -534,7 +538,7 @@ void Game::UpdateGarbage(float dt)
         m_sc = r.color;
         m_shotSpecial = kSpecialNone;
         spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
-        Land(r.x, r.y, false, hitR, hitC);
+        Land(r.x, r.y, false, hitR, hitC, r.exact ? r.col : -1);
         m_sc = savedColor;
         m_shotSpecial = savedSpecial;
         m_risers[i] = m_risers.back();
@@ -623,7 +627,7 @@ int Game::PrismColorAt(int r, int c) const
     return best;
 }
 
-void Game::Land(float x, float y, bool fromShot, int hitR, int hitC)
+void Game::Land(float x, float y, bool fromShot, int hitR, int hitC, int wantCol)
 {
     const int special = m_shotSpecial;
     m_shotSpecial = kSpecialNone;
@@ -679,6 +683,35 @@ void Game::Land(float x, float y, bool fromShot, int hitR, int hitC)
                 const float dy = YOfLive(r) - y;
                 const float d2 = dx * dx + dy * dy;
                 if (d2 < best) { best = d2; br = r; bc = c; }
+            }
+        }
+    }
+
+    // Duel's per-turn column budget: never let one garbage bubble jump past
+    // the bottom of its requested column (that would make 1 bubble add several
+    // depth rows and defeat the per-column cap). If the generic landing is
+    // already at or above it, keep the normal placement.
+    if (wantCol >= 0 && wantCol < m_cols) {
+        const int d = ColumnDepth(wantCol);     // first empty row in that column
+        if (d < kMaxRows) {
+            int landCol = wantCol;
+            if (landCol >= RowCount(d)) landCol = RowCount(d) - 1;
+            if (landCol >= 0 && !Cell(d, landCol) && IsAttachable(d, landCol)) {
+                // Keep the normal (usually shallower) row when it is above the
+                // column bottom, but put it in the requested column. If the
+                // generic landing jumped deeper, use the column bottom instead.
+                if (br < 0 || br > d) {
+                    br = d;
+                    bc = landCol;
+                } else if (br < d && wantCol < RowCount(br) &&
+                           !Cell(br, wantCol) && IsAttachable(br, wantCol)) {
+                    bc = wantCol;
+                } else if (br == d) {
+                    bc = landCol;
+                }
+            } else if (br < 0 || br > d) {
+                br = d;
+                bc = landCol;
             }
         }
     }

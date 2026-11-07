@@ -58,6 +58,7 @@ struct Riser {
     float x, y;
     int   color;
     int   col;      // column it will land in (drives the incoming warning)
+    bool  exact;    // duel: keep the requested column when landing
     float warn;     // seconds left before it starts to rise
     float t;        // seconds it has been rising
     bool  hold;     // reached contact, waiting for a settled board
@@ -132,6 +133,10 @@ public:
     // Garbage aimed at one column, raising the queue cap overflow counter when
     // more is requested than kMaxQueued allows.
     void AddGarbageAt(int col, int count);
+    // Explicit column list (duel's per-turn budget): never re-picks columns.
+    void AddGarbageCols(const int* cols, int count) {
+        if (count > 0) m_overflow += PushGarbage(cols, count);
+    }
     int  OverflowCount() const { return m_overflow; }
 
     // Garbage still on its way up: the total, and how many are aimed at one
@@ -244,7 +249,8 @@ private:
     bool IsAttachable(int r, int c) const;
     bool HitBubble(float x, float y) const;
     int  PrismColorAt(int r, int c) const;
-    void Land(float x, float y, bool fromShot = true, int hitR = -1, int hitC = -1);
+    void Land(float x, float y, bool fromShot = true, int hitR = -1, int hitC = -1,
+              int wantCol = -1);
     void ExplodeAt(float x, float y, bool fromShot);
     void Descend();
     void AdvanceCeiling();

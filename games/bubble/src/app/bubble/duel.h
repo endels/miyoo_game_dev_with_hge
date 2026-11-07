@@ -18,7 +18,7 @@ namespace bbl {
 // ---------------------------------------------------------------- tunables
 // Every number below is a design §5.2 parameter; keep this list as the single
 // place where the rules are tuned.
-const int   kShotsPerTurn       = 5;      // T1
+const int   kShotsPerTurn       = 3;      // T1
 const int   kDescendEveryShots  = 4;      // T3
 const int   kDescendFast1Shots  = 3;      // T4 (global >= kSuddenDeath1Shots)
 const int   kDescendFast2Shots  = 2;      // T5 (global >= kSuddenDeath2Shots)
@@ -118,6 +118,7 @@ public:
     int  Turn() const           { return m_turn; }
     int  ShotsLeft() const      { return m_shotsLeft; }
     int  ShotsPerTurn() const   { return kShotsPerTurn; }
+    int  TurnCount() const      { return m_turnCount; }
     int  GlobalShots() const    { return m_globalShots; }
     int  Result() const         { return m_result; }
     int  Depth(int side) const  { return m_depth[side]; }
@@ -144,6 +145,7 @@ private:
     void checkOver();
     bool readyToHandOver() const;
     void flushRisers();
+    int  pickGarbageCol(int target, int hitCol, const int have[kDuelCols]);
 
     Side m_sides[2];
     int  m_aiLevel = kAiLevelDefault;
@@ -170,6 +172,11 @@ private:
     int  m_overflow = 0;
     int  m_maxAtk[2] = { 0, 0 };
     int  m_colHits[2][kDuelCols] = {{ 0 }};
+    // Per-turn garbage budget: each target column may receive at most 4.
+    int  m_turnGarbage[2][kDuelCols] = {{ 0 }};
+    u32  m_garbageRng = 1;
+    // Rounds started (player + CPU = one). Reported as `turns=` by --duel-sim.
+    int  m_turnCount = 1;
 
     std::vector<DuelShotLog> m_log;
 };

@@ -80,6 +80,10 @@ void DuelMatch::Reset(u32 seed)
     m_overflow = 0;
     m_maxAtk[0] = m_maxAtk[1] = 0;
     memset(m_colHits, 0, sizeof(m_colHits));
+    memset(m_turnGarbage, 0, sizeof(m_turnGarbage));
+    m_garbageRng = seed ^ 0x9E3779B9u;
+    if (m_garbageRng == 0) m_garbageRng = 1;
+    m_turnCount = 1;
     m_log.clear();
 
     for (int i = 0; i < 2; ++i)
@@ -103,6 +107,8 @@ void DuelMatch::beginTurn(int side)
     m_handoverPending = false;
     m_handoverStall = 0.0f;
     m_turnShotIdx = 0;
+    if (side == 0) ++m_turnCount;       // one round = player turn + CPU turn
+    memset(m_turnGarbage, 0, sizeof(m_turnGarbage));
 
     const int other = 1 - side;
     Side& s = m_sides[side];
@@ -159,6 +165,69 @@ void DuelMatch::flushRisers()
         for (int guard = 0; guard < 600 && !g.Risers().empty(); ++guard)
             g.Update(1.0f / 60.0f);
     }
+}
+
+// Pick one garbage column for the current shot. Weights mirror
+// Game::PickGarbageColumns (6 on the hit column, 2 on +/-1, 1 on +/-2), but the
+// budget is per turn: a column may take at most 3 in one shot and at most 4
+// across the whole turn. When the local ring is full, spill outward to the
+// nearest columns with budget instead of dropping damage.
+int DuelMatch::pickGarbageCol(int target, int hitCol, const int have[kDuelCols])
+{
+    if (hitCol < 0) hitCol = 0;
+    if (hitCol >= kDuelCols) hitCol = kDuelCols - 1;
+
+    static const int off[5] = { 0, -1, 1, -2, 2 };
+    static const int wgt[5] = { 6, 2, 2, 1, 1 };
+    int cand[5] = { -1, -1, -1, -1, -1 };
+    int wsum = 0;
+    for (int k = 0; k < 5; ++k) {
+        const int c = hitCol + off[k];
+        if (c < 0 || c >= kDuelCols) continue;
+        int cap = 4 - m_turnGarbage[target][c];
+        if (cap > 3) cap = 3;
+        if (have[c] >= cap) continue;
+        cand[k] = c;
+        wsum += wgt[k];
+    }
+
+    m_garbageRng = m_garbageRng * 1664525u + 1013904223u;
+    int r = (int)((m_garbageRng >> 8) % (u32)(wsum > 0 ? wsum : 1));
+    if (wsum > 0) {
+        for (int k = 0; k < 5; ++k) {
+            if (cand[k] < 0) continue;
+            if (r < wgt[k]) return cand[k];
+            r -= wgt[k];
+        }
+    }
+
+    // Local ring full: walk outward and take the nearest columns that still
+    // have budget. Still no column exceeds the per-turn cap.
+    for (int dist = 3; dist < kDuelCols; ++dist) {
+        int opts[2];
+        int n = 0;
+        for (int sgn = -1; sgn <= 1; sgn += 2) {
+            const int c = hitCol + sgn * dist;
+            if (c < 0 || c >= kDuelCols) continue;
+            int cap = 4 - m_turnGarbage[target][c];
+            if (cap > 3) cap = 3;
+            if (have[c] >= cap) continue;
+            opts[n++] = c;
+        }
+        if (n > 0) {
+            m_garbageRng = m_garbageRng * 1664525u + 1013904223u;
+            return opts[(m_garbageRng >> 8) % (u32)n];
+        }
+    }
+
+    // Last resort: any column with room. With 10 columns and at most 16
+    // garbage per shot this cannot be reached, but never index out of bounds.
+    for (int c = 0; c < kDuelCols; ++c) {
+        int cap = 4 - m_turnGarbage[target][c];
+        if (cap > 3) cap = 3;
+        if (have[c] < cap) return c;
+    }
+    return -1;
 }
 
 void DuelMatch::setRowEvery()
@@ -245,9 +314,22 @@ void DuelMatch::settleShot(int side)
 
     const int col = g.LastLandCol();
     const int target = 1 - side;
-    const int before = m_sides[target].game.OverflowCount();
-    if (atk > 0) m_sides[target].game.AddGarbageAt(col, atk);
-    m_overflow += m_sides[target].game.OverflowCount() - before;
+    int cols[32];
+    int ncols = 0;
+    int have[kDuelCols] = { 0 };
+    for (int i = 0; i < atk; ++i) {
+        const int c = pickGarbageCol(target, col, have);
+        if (c < 0) break;       // unreachable: 10 columns x 4 > max shot
+        cols[ncols++] = c;
+        ++have[c];
+    }
+    if (ncols > 0) {
+        const int before = m_sides[target].game.OverflowCount();
+        m_sides[target].game.AddGarbageCols(cols, ncols);
+        m_overflow += m_sides[target].game.OverflowCount() - before;
+        for (int i = 0; i < ncols; ++i)
+            ++m_turnGarbage[target][cols[i]];
+    }
 
     m_shotOpen[side] = false;
     ++m_globalShots;
@@ -278,12 +360,20 @@ void DuelMatch::settleShot(int side)
     rec.depth1 = m_depth[1];
     m_log.push_back(rec);
 
+    char colsBuf[64];
+    colsBuf[0] = 0;
+    int colsOff = 0;
+    for (int i = 0; i < ncols && colsOff < (int)sizeof(colsBuf) - 4; ++i) {
+        colsOff += snprintf(colsBuf + colsOff, sizeof(colsBuf) - (size_t)colsOff,
+                            "%s%d", i ? ":" : "", cols[i]);
+    }
+
     fprintf(stderr,
             "[shot] g=%d side=%d turn=%d idx=%d col=%d clear=%d pops=%d drops=%d "
-            "atk=%d tgt=%d depth0=%d depth1=%d desc=%d\n",
+            "atk=%d tgt=%d depth0=%d depth1=%d desc=%d cols=%s\n",
             m_globalShots, side, m_turn, rec.idx, col, pops + drops,
             pops, drops, atk, col, m_depth[0], m_depth[1],
-            DuelDescendEvery(m_globalShots));
+            DuelDescendEvery(m_globalShots), colsBuf);
 
     setRowEvery();
     checkOver();
