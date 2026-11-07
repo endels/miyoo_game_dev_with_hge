@@ -19,7 +19,7 @@ namespace bbl {
 // Every number below is a design §5.2 parameter; keep this list as the single
 // place where the rules are tuned.
 const int   kShotsPerTurn       = 5;      // T1
-const float kHandoverSec        = 0.50f;  // T2
+const float kHandoverSec        = 0.00f;  // T2: phase placeholder, no timed wait
 const int   kDescendEveryShots  = 4;      // T3
 const int   kDescendFast1Shots  = 3;      // T4 (global >= kSuddenDeath1Shots)
 const int   kDescendFast2Shots  = 2;      // T5 (global >= kSuddenDeath2Shots)
@@ -29,8 +29,9 @@ const int   kMaxGlobalShots     = 300;    // T6: hard stop -> DRAW
 const int   kAttackCapPerShot   = 8;      // A7
 const int   kClearBoardBonus    = 6;      // A7.1
 const int   kDepthMax           = 13;     // DepthRows() >= this = over the line
-const float kTurnStartSec       = 0.50f;  // TURN_START banner
-const float kAIStartDelay       = 0.40f;  // T7
+const float kTurnStartSec       = 0.00f;  // TURN_START placeholder, no freeze
+const float kHandoverStallSec   = 3.0f;   // watchdog: force risers after this
+const float kAIStartDelay       = 0.30f;  // T7
 // AI2 (the CPU shot interval) is per difficulty level; see aiLevelInfo().
 const int   kDuelCols           = 10;
 
@@ -131,6 +132,8 @@ private:
     void setRowEvery();
     void settleShot(int side);
     void checkOver();
+    bool readyToHandOver() const;
+    void flushRisers();
 
     Side m_sides[2];
     int  m_aiLevel = kAiLevelDefault;
@@ -138,6 +141,7 @@ private:
     int  m_shotsLeft = kShotsPerTurn;
     int  m_sub = kDuelTurnStart;
     float m_timer = 0.0f;
+    float m_handoverStall = 0.0f;
     int  m_result = kDuelRunning;
     int  m_globalShots = 0;
     int  m_depth[2] = { 0, 0 };
