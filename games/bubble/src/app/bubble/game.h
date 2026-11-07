@@ -36,9 +36,9 @@ const int   kMaxQueued = 8;             // cap on pending garbage
 // Garbage delivery. A whole attack arrives as one short surge instead of a slow
 // drip: every bubble of a wave shares kRiserWindow, so nothing is still drifting
 // in long after the hit landed.
-const float kRiserWindow      = 0.28f;  // seconds from launch to contact
-const float kRiserWarnSec     = 0.50f;  // red column warning before the surge
-const float kRiserWaveGap     = 0.35f;  // gap before the 2nd surge of a big hit
+const float kRiserWindow      = 0.24f;  // seconds from launch to contact
+const float kRiserWarnSec     = 0.25f;  // red column warning before the surge
+const float kRiserWaveGap     = 0.18f;  // gap before the 2nd surge of a big hit
 const int   kGarbageCapTarget = 3;      // max garbage in the column that was hit
 const int   kGarbageCapOther  = 2;      // max garbage in a spilled-to column
 
@@ -60,6 +60,7 @@ struct Riser {
     int   col;      // column it will land in (drives the incoming warning)
     float warn;     // seconds left before it starts to rise
     float t;        // seconds it has been rising
+    bool  hold;     // reached contact, waiting for a settled board
 };
 
 // Special payload carried by a shot bubble. Colours stay 1..kColors; the
@@ -177,6 +178,10 @@ public:
     // Risers only. Duel hand-over banners freeze shots, not garbage that is
     // already on its way, so that path calls this instead of Update().
     void UpdateGarbage(float dt);
+    // Cosmetics only: particle rings and falling debris. Deciding logic stays
+    // in Update(); duel hand-over banners use this so an explosion in flight
+    // keeps moving through the pause instead of hanging mid-frame.
+    void TickCosmetic(float dt);
 
     State  GetState() const    { return m_state; }
     bool   IsFlying() const    { return m_state == FLY; }

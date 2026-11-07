@@ -727,8 +727,20 @@ void BubbleApp::updateDuel(float dt, const hge::Input& in)
     if (in.aimLeft)  m_match.AimBy(-aimRate * dt);
     if (in.aimRight) m_match.AimBy(aimRate * dt);
 
-    if (in.firePressed && !dial && m_duelShotCd <= 0.0f) {
-        if (m_match.Fire()) m_duelShotCd = 0.12f;   // T8: no accidental double fire
+    // No click is ever thrown away while the turn is still playable. If the
+    // board is not ready this frame (the player's own bubble is still in the
+    // air, or the hand-over banner is running) the intent is held and fired
+    // the instant it can be, so a click never reads as "the game ignored me".
+    const bool myTurn       = (m_match.Turn() == 0);
+    const bool handoverMine = (m_match.Turn() == 1 && m_match.ShotsLeft() == 0);
+    if (in.firePressed && !dial && (myTurn || handoverMine)) m_duelFireWant = true;
+    if (!myTurn && !handoverMine) m_duelFireWant = false;   // CPU is shooting
+
+    if (m_duelFireWant && !dial && m_duelShotCd <= 0.0f) {
+        if (m_match.Fire()) {
+            m_duelShotCd = 0.12f;   // T8: no accidental double fire
+            m_duelFireWant = false;
+        }
     }
 
     m_match.Tick(dt, m_opt.autoplay);

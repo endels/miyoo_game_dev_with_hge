@@ -131,6 +131,7 @@ private:
     int       m_duelAtkCol[2] = { -1, -1 };
     float     m_duelAtkTimer = 0.0f;
     float     m_duelShotCd = 0.0f;
+    bool      m_duelFireWant = false; // click kept until it can be fired
     int       m_duelSeed = 1;
 
     int       m_aiLevel = kAiLevelDefault;

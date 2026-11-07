@@ -161,7 +161,22 @@ void DuelMatch::AimBy(float deltaRad)
 bool DuelMatch::Fire()
 {
     if (m_result != kDuelRunning) return false;
-    if (m_sub != kDuelShooting) return false;      // TURN_START/HANDOVER swallow it
+    // A click is never a dead input while the turn can still be played:
+    //   * kDuelShooting on the player's turn: fire now.
+    //   * kDuelTurnStart: the banner is a pause, not a lock, so an explicit
+    //     fire ends it on the spot.
+    //   * kDuelHandover once the CPU has spent its shots: hand the turn over
+    //     immediately instead of making the player wait out the banner.
+    if (m_sub == kDuelHandover) {
+        if (m_turn != 1 || m_shotsLeft > 0) return false;
+        beginTurn(0);
+    }
+    if (m_sub == kDuelTurnStart) {
+        if (m_turn != 0) return false;
+        m_sub = kDuelShooting;
+        m_timer = 0.0f;
+    }
+    if (m_sub != kDuelShooting) return false;
     if (m_turn != 0) return false;
     if (m_sides[0].game.GetState() != Game::AIM) return false;
     if (m_shotsLeft <= 0) return false;
@@ -294,8 +309,13 @@ void DuelMatch::Tick(float dt, bool playerBot)
     // see; this is damage that was committed while the shooter was watching,
     // and its own column warning is the only warning it gets.
     if (m_sub == kDuelTurnStart || m_sub == kDuelHandover) {
-        m_sides[0].game.UpdateGarbage(dt);
-        m_sides[1].game.UpdateGarbage(dt);
+        // T2 keeps the rules still through the banners, but the cosmetics
+        // must keep moving: an explosion ring that hangs half-expanded for
+        // half a second is indistinguishable from a dropped frame.
+        for (int i = 0; i < 2; ++i) {
+            m_sides[i].game.TickCosmetic(dt);
+            m_sides[i].game.UpdateGarbage(dt);
+        }
     }
 
     switch (m_sub) {

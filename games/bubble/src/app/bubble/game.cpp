@@ -391,6 +391,7 @@ int Game::PushGarbage(const int* cols, int count)
         r.warn  = kRiserWarnSec + (i < firstWave ? 0.0f : kRiserWaveGap);
         r.warn += 0.02f * (float)(i % 5);       // <= 0.08 s of stagger
         r.t     = 0.0f;
+        r.hold  = false;
         m_risers.push_back(r);
     }
     return dropped;
@@ -484,64 +485,65 @@ void Game::UpdateGarbage(float dt)
     for (size_t i = 0; i < m_risers.size();) {
         Riser& r = m_risers[i];
 
-        float step = dt;
-        if (r.warn > 0.0f) {                // warning lead-in, nothing moves
-            r.warn -= step;
-            if (r.warn > 0.0f) { ++i; continue; }
-            step = -r.warn;                 // leftovers after the warning
-            r.warn = 0.0f;
-        }
-        r.t += step;
-
-        // Speed that still makes the window: the remaining distance to the
-        // ceiling is an upper bound on this bubble's flight.
-        float left = riserWindow - r.t;
-        if (left < 0.05f) left = 0.05f;
-        float speed = (r.y - kCeilY) / left;
-        const float speedMin = 1500.0f * m_riserSpeed;
-        if (speed < speedMin) speed = speedMin;
-        if (speed > 4000.0f) speed = 4000.0f;
-
-        // Small steps, so it reads as a surge and cannot tunnel past a bubble
-        // between frames.
-        float move = speed * step;
-        bool landed = false;
         int  hitR = -1, hitC = -1;
-        while (move > 0.0f && !landed) {
-            const float s = move < 6.0f ? move : 6.0f;
-            move -= s;
-            r.y -= s;
-            if (r.y - kR <= kCeilY) landed = true;
-            else if (HitBubbleCell(r.x, r.y, &hitR, &hitC)) landed = true;
+        bool arrived = r.hold;      // parked at the contact point last frame
+
+        if (!arrived) {
+            float step = dt;
+            if (r.warn > 0.0f) {            // warning lead-in, nothing moves
+                r.warn -= step;
+                if (r.warn > 0.0f) { ++i; continue; }
+                step = -r.warn;             // leftovers after the warning
+                r.warn = 0.0f;
+            }
+            r.t += step;
+
+            // Speed that still makes the window: the remaining distance to the
+            // ceiling is an upper bound on this bubble's flight.
+            float left = riserWindow - r.t;
+            if (left < 0.05f) left = 0.05f;
+            float speed = (r.y - kCeilY) / left;
+            const float speedMin = 1500.0f * m_riserSpeed;
+            if (speed < speedMin) speed = speedMin;
+            if (speed > 4000.0f) speed = 4000.0f;
+
+            // Small steps, so it reads as a surge and cannot tunnel past
+            // a bubble between frames.
+            float move = speed * step;
+            while (move > 0.0f && !arrived) {
+                const float s = move < 6.0f ? move : 6.0f;
+                move -= s;
+                r.y -= s;
+                if (r.y - kR <= kCeilY) arrived = true;
+                else if (HitBubbleCell(r.x, r.y, &hitR, &hitC)) arrived = true;
+            }
+            if (arrived) r.hold = true;
         }
-        if (landed) {
-            m_sc = r.color;
-            m_state = AIM;
-            m_shotSpecial = kSpecialNone;
-            spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
-            Land(r.x, r.y, false, hitR, hitC);
-            m_risers[i] = m_risers.back();
-            m_risers.pop_back();
-            continue;
-        }
-        ++i;
+
+        // Garbage only sticks to a board that is at rest. A riser arriving
+        // while a shot is in flight used to force the board back to AIM and
+        // swallow the player's bubble; now it parks at the contact point until
+        // the board is idle again. A flying shot never collides with a riser
+        // either: that check only ever looked at the grid.
+        if (!arrived || m_state != AIM) { ++i; continue; }
+
+        // Land() places the bubble through m_sc and clears the pending special,
+        // so the player's loaded shot is put back afterwards.
+        const int savedColor   = m_sc;
+        const int savedSpecial = m_shotSpecial;
+        m_sc = r.color;
+        m_shotSpecial = kSpecialNone;
+        spawnRing(r.x, r.y, 0xFFFFD08Au, 1.6f);
+        Land(r.x, r.y, false, hitR, hitC);
+        m_sc = savedColor;
+        m_shotSpecial = savedSpecial;
+        m_risers[i] = m_risers.back();
+        m_risers.pop_back();
     }
 }
 
-void Game::Update(float dt)
+void Game::TickCosmetic(float dt)
 {
-    m_idle += dt;
-    m_sinceRes += dt;
-
-    // The ceiling creeps down in 1/kRowEvery steps per shot; smooth the
-    // logical offset for display/collision so it never snaps.
-    if (m_ceilAnim != m_ceil) {
-        float k = dt * 16.0f;
-        if (k > 1.0f) k = 1.0f;
-        m_ceilAnim += (m_ceil - m_ceilAnim) * k;
-        if (fabsf(m_ceil - m_ceilAnim) < 0.02f) m_ceilAnim = m_ceil;
-    }
-
     for (size_t i = 0; i < m_parts.size();) {
         Particle& p = m_parts[i];
         p.t += dt;
@@ -563,7 +565,23 @@ void Game::Update(float dt)
         if (f.y > 620.0f) { m_fall[i] = m_fall.back(); m_fall.pop_back(); continue; }
         ++i;
     }
+}
 
+void Game::Update(float dt)
+{
+    m_idle += dt;
+    m_sinceRes += dt;
+    // The ceiling creeps down in 1/kRowEvery steps per shot; smooth the
+    // logical offset for display/collision so it never snaps. This feeds
+    // collision geometry, so it stays in the rule update; only particles
+    // and debris are free to run during a hand-over banner.
+    if (m_ceilAnim != m_ceil) {
+        float k = dt * 16.0f;
+        if (k > 1.0f) k = 1.0f;
+        m_ceilAnim += (m_ceil - m_ceilAnim) * k;
+        if (fabsf(m_ceil - m_ceilAnim) < 0.02f) m_ceilAnim = m_ceil;
+    }
+    TickCosmetic(dt);
     UpdateGarbage(dt);
 
     if (m_state != FLY) return;
