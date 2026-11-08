@@ -360,6 +360,7 @@ public:
         }
         if (m_quads.empty()) return;
 #if HGE_FEATURE_THREADS
+        accountCoverage();
         const long long costPx = estimateCostPx();
         if (getenv("HGE_BLIT_LOG")) {
             static int pl = 0;
@@ -414,6 +415,118 @@ private:
         }
     }
 #endif
+
+    // Overdraw accounting (HGE_BLIT_LOG=2). Groups the queued quads by
+    // (texture, quad size) and accumulates how many framebuffer pixels each
+    // group actually covers, so "who is eating the frame budget" can be read
+    // straight off the log instead of guessed.
+    struct CovGroup {
+        const void* tex;
+        int  tw, th;      // texture dimensions (0 for solid quads)
+        int  qw, qh;      // quad size bucket, logical pixels
+        bool xf;          // drawn through SetTransform
+        long long px;
+        long long count;
+    };
+
+    bool coverageLog() const
+    {
+        const char* v = getenv("HGE_BLIT_LOG");
+        return v && v[0] == '2';
+    }
+
+    void addCoverage(const QuadItem& q, long long px)
+    {
+        const BlitTexture* t = q.tex;
+        const int tw = t ? t->w : 0;
+        const int th = t ? t->h : 0;
+        float minx = q.v[0].x, maxx = minx, miny = q.v[0].y, maxy = miny;
+        for (int i = 1; i < 4; ++i) {
+            if (q.v[i].x < minx) minx = q.v[i].x;
+            if (q.v[i].x > maxx) maxx = q.v[i].x;
+            if (q.v[i].y < miny) miny = q.v[i].y;
+            if (q.v[i].y > maxy) maxy = q.v[i].y;
+        }
+        const int qw = ((int)lroundf((maxx - minx)) / 8) * 8;
+        const int qh = ((int)lroundf((maxy - miny)) / 8) * 8;
+        for (int i = 0; i < m_covCount; ++i) {
+            CovGroup& g = m_cov[i];
+            if (g.tex == (const void*)t && g.tw == tw && g.th == th &&
+                g.qw == qw && g.qh == qh && g.xf == q.xf) {
+                g.px += px;
+                ++g.count;
+                return;
+            }
+        }
+        if (m_covCount < (int)(sizeof(m_cov) / sizeof(m_cov[0]))) {
+            CovGroup& g = m_cov[m_covCount++];
+            g.tex = t;
+            g.tw = tw; g.th = th;
+            g.qw = qw; g.qh = qh;
+            g.xf = q.xf;
+            g.px = px;
+            g.count = 1;
+        }
+    }
+
+    void accountCoverage()
+    {
+        if (!coverageLog()) return;
+        long long frameTotal = 0;
+        for (const QuadItem& q : m_quads) {
+            float minx = q.v[0].x, maxx = minx, miny = q.v[0].y, maxy = miny;
+            for (int i = 1; i < 4; ++i) {
+                if (q.v[i].x < minx) minx = q.v[i].x;
+                if (q.v[i].x > maxx) maxx = q.v[i].x;
+                if (q.v[i].y < miny) miny = q.v[i].y;
+                if (q.v[i].y > maxy) maxy = q.v[i].y;
+            }
+            const int x0 = (int)lroundf(m_ox + minx * m_s);
+            const int y0 = (int)lroundf(m_oy + miny * m_s);
+            const int x1 = (int)lroundf(m_ox + maxx * m_s);
+            const int y1 = (int)lroundf(m_oy + maxy * m_s);
+            const int cx0 = std::max(x0, 0), cy0 = std::max(y0, 0);
+            const int cx1 = std::min(x1, m_w), cy1 = std::min(y1, m_h);
+            if (cx0 >= cx1 || cy0 >= cy1) continue;
+            const long long px = (long long)(cx1 - cx0) * (cy1 - cy0);
+            frameTotal += px;
+            addCoverage(q, px);
+        }
+        m_covFramePx += frameTotal;
+        if (++m_covFrames % 60 != 0) return;
+
+        dumpCoverage();
+        m_covCount = 0;
+        m_covFramePx = 0;
+        m_covFrames = 0;
+    }
+
+    void dumpCoverage()
+    {
+        const long long screen = (long long)m_w * m_h;
+        const double overdraw = m_covFramePx / (double)(screen * m_covFrames);
+        fprintf(stderr, "[blit-cov] frames=%d screen_px=%lld cover_px/frame=%.0f overdraw=%.2fx\n",
+                m_covFrames, screen, m_covFramePx / (double)m_covFrames, overdraw);
+
+        int order[64];
+        for (int i = 0; i < m_covCount; ++i) order[i] = i;
+        for (int i = 0; i < m_covCount; ++i) {
+            for (int j = i + 1; j < m_covCount; ++j) {
+                if (m_cov[order[j]].px > m_cov[order[i]].px) {
+                    const int t = order[i]; order[i] = order[j]; order[j] = t;
+                }
+            }
+        }
+        fprintf(stderr, "[blit-cov]  #  px/frame  quad/frame  tex        quad    xf  share\n");
+        for (int k = 0; k < m_covCount && k < 12; ++k) {
+            const CovGroup& g = m_cov[order[k]];
+            fprintf(stderr,
+                    "[blit-cov] %2d %9.0f %11.1f  %4dx%-4d  %3dx%-3d  %d  %4.1f%%\n",
+                    k + 1, g.px / (double)m_covFrames, g.count / (double)m_covFrames,
+                    g.tw, g.th, g.qw, g.qh, g.xf ? 1 : 0,
+                    100.0 * g.px / (double)(m_covFramePx ? m_covFramePx : 1));
+        }
+    }
 
     // Work estimate for the queued frame, in framebuffer pixels. Quads drawn
     // with a transform go through the triangle rasterizer, which costs about
@@ -782,6 +895,10 @@ private:
     f32 m_xf[6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
     bool m_xfActive = false;
     bool m_defer = false;
+    CovGroup  m_cov[64];
+    int       m_covCount = 0;
+    int       m_covFrames = 0;
+    long long m_covFramePx = 0;
     static const long long kDefaultMtMinPx = 160000;
     long long m_mtMinPx = kDefaultMtMinPx;
     bool m_clip = false;
