@@ -57,7 +57,7 @@ have xvfb-run && echo "xvfb-run: yes" || echo "xvfb-run: no"
 
 say "repo state"
 have git && git log --oneline -3 2>/dev/null
-ls games/bubble/assets/*.pak 2>/dev/null || echo "games/bubble/assets/*.pak missing"
+ls games/*/assets/*.pak 2>/dev/null || echo "no games/*/assets/*.pak found"
 
 say "cmake configure probe (no build)"
 if [ -d third_party/SDL2 ]; then

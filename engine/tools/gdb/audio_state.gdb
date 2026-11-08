@@ -1,4 +1,4 @@
-# One-shot audio/mixer snapshot for an attached bubble_level1.
+# One-shot audio/mixer snapshot for an attached process running this engine.
 # Sourced by tools/attach_dump.sh. Symbols come from a RelWithDebInfo build.
 # Names are single-quoted because the mixer statics live in an anonymous namespace.
 

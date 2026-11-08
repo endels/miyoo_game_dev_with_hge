@@ -1,9 +1,12 @@
 #!/bin/sh
-# Attach gdb to a running bubble_level1 (or any PID) and dump a one-shot
+# Attach gdb to a running game built on this engine and dump a one-shot
 # diagnostic snapshot. Built for the "audio goes silent after a while" hunt.
 #
-#   tools/attach_dump.sh <pid>
-#   tools/attach_dump.sh              # picks the newest bubble_level1 process
+#   engine/tools/attach_dump.sh <pid|process-name>
+#   engine/tools/attach_dump.sh "" my_game   # pick the newest 'my_game' process
+#
+# The engine has no idea what your executable is called, so the process name is
+# never hardcoded here.
 #
 # Requires a binary built with debug info (build-dbg, RelWithDebInfo) and the
 # target to have been started with HGE_ALLOW_GDB=1 so that yama
@@ -13,10 +16,11 @@ set -u
 
 PID="${1:-}"
 if [ -z "$PID" ]; then
-    PID=$(pgrep -n -x bubble_level1 || true)
+    PROC="${2:-${HGE_PROCESS:-}}"
+    [ -n "$PROC" ] && PID=$(pgrep -n -x "$PROC" || true)
 fi
 if [ -z "$PID" ]; then
-    echo "usage: $0 <pid>   (no bubble_level1 process found)" >&2
+    echo "usage: $0 <pid> | $0 \"\" <process-name>   (no process matched)" >&2
     exit 2
 fi
 
