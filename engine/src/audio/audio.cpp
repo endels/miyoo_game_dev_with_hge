@@ -284,7 +284,7 @@ bool Init()
         g_dev = SDL_OpenAudioDevice(nullptr, 0, &want, &g_spec, 0);
         if (g_dev) break;
         if (attempt == 0)
-            fprintf(stderr, "[bubble] audio open failed (%s); retrying...\n", SDL_GetError());
+            fprintf(stderr, "[hge] audio open failed (%s); retrying...\n", SDL_GetError());
         SDL_Delay(180);
     }
     if (!g_dev) {

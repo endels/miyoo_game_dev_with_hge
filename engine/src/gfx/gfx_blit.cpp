@@ -113,10 +113,10 @@ public:
         m_clip    = false;
         m_quads.reserve(4096);
 
-        const char* im = getenv("BUBBLE_IMMEDIATE");
+        const char* im = getenv("HGE_IMMEDIATE");
         m_defer = !(im && im[0] == '1');
 #if HGE_FEATURE_THREADS
-        if (m_defer && !getenv("BUBBLE_NO_THREADS")) {
+        if (m_defer && !getenv("HGE_NO_THREADS")) {
             try {
                 m_worker = std::thread([this] { workerLoop(); });
                 m_hasWorker = true;
@@ -318,7 +318,7 @@ public:
     void FlushFrame()
     {
         if (!m_defer) return;
-        if (getenv("BUBBLE_BLIT_LOG")) {
+        if (getenv("HGE_BLIT_LOG")) {
             static int fl = 0;
             if (++fl % 60 == 0)
                 fprintf(stderr, "[blit] flush=%d quads=%d worker=%d\n",

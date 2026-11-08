@@ -27,7 +27,7 @@ namespace {
 SDL_Renderer*      g_ren = nullptr;
 SDL_GameController* g_pad = nullptr;
 SDL_Joystick*      g_joy = nullptr;
-SDL_Surface*       g_off = nullptr;   // offscreen test surface only (BUBBLE_OFFSCREEN)
+SDL_Surface*       g_off = nullptr;   // offscreen test surface only (HGE_OFFSCREEN)
 SDL_Surface*       g_sw  = nullptr;   // software render target (MMA or malloc)
 unsigned char      g_heldKeys[256];
 
@@ -244,7 +244,7 @@ bool backendInit(int width, int height, const char* title, bool /*vsync*/, bool 
 {
     // Headless verification mode: software renderer into an in-memory surface.
     {
-        const char* off = getenv("BUBBLE_OFFSCREEN");
+        const char* off = getenv("HGE_OFFSCREEN");
         if (off && off[0] == '1') {
             SDL_Init(SDL_INIT_TIMER);
             g_off = SDL_CreateRGBSurfaceWithFormat(0, width, height, 32,
@@ -282,8 +282,8 @@ bool backendInit(int width, int height, const char* title, bool /*vsync*/, bool 
     } else {
         winW = dm.w; winH = dm.h;
     }
-    const char* envW = getenv("BUBBLE_WIN_W");
-    const char* envH = getenv("BUBBLE_WIN_H");
+    const char* envW = getenv("HGE_WIN_W");
+    const char* envH = getenv("HGE_WIN_H");
     if (envW && envH) {
         int w = atoi(envW), h = atoi(envH);
         if (w > 0 && h > 0) { winW = w; winH = h; }

@@ -32,7 +32,7 @@ unsigned g_held = 0;
 plat::Event g_queue[8];
 int g_qHead = 0, g_qTail = 0;
 
-// Test hook: BUBBLE_TEST_FRAMES=N makes the game quit after N frames so the
+// Test hook: HGE_TEST_FRAMES=N makes the game quit after N frames so the
 // core can be exercised from a shell without a controller.
 int  g_testFrames = 0;
 int  g_frameCount = 0;
@@ -73,7 +73,7 @@ int plat_libretro_begin()
     g_ucGame.uc_link          = &g_ucMain;
     makecontext(&g_ucGame, gameEntry, 0);
     g_started = true;
-    const char* tf = getenv("BUBBLE_TEST_FRAMES");
+    const char* tf = getenv("HGE_TEST_FRAMES");
     g_testFrames = tf ? atoi(tf) : 0;
     swapcontext(&g_ucMain, &g_ucGame);   // run until first SwapBuffers / exit
     return g_done ? 0 : 1;
@@ -148,11 +148,15 @@ const char* BasePath()
     static char buf[1024] = {0};
     static bool done = false;
     if (!done) {
-        const char* env = getenv("BUBBLE_DIR");
+        const char* env = getenv("HGE_DIR");
         if (env && env[0]) {
             snprintf(buf, sizeof(buf), "%s", env);
         } else {
-            snprintf(buf, sizeof(buf), "/mnt/SDCARD/App/Bubble/");
+            // A libretro core cannot know where the frontend put the app data,
+            // so the launcher is expected to export HGE_DIR. Falling back to the
+            // working directory keeps the engine free of any game's install path.
+            fprintf(stderr, "[hge] HGE_DIR not set; BasePath() falls back to ./\n");
+            snprintf(buf, sizeof(buf), "./");
         }
         const size_t n = strlen(buf);
         if (n && buf[n - 1] != '/' && n + 1 < sizeof(buf)) {
@@ -205,7 +209,7 @@ bool ReadFileAll(const char* path, std::vector<u8>& out)
 
 void MessageBox(const char* title, const char* text)
 {
-    fprintf(stderr, "[bubble] %s: %s\n", title ? title : "Error", text ? text : "");
+    fprintf(stderr, "[hge] %s: %s\n", title ? title : "Error", text ? text : "");
 }
 
 void SwapBuffers()

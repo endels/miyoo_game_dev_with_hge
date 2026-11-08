@@ -113,5 +113,5 @@ cmake --build --preset libretro-arm -j
 ## 测试
 
 主机侧：`ctest`（blit / gfx_sdl / sim golden）。详见 `docs/TESTING.md`。
-Miyoo 用 SSH 部署后跑 `--selftest`、`--sim-only`、`BUBBLE_OFFSCREEN=1 --render-test`，
+Miyoo 用 SSH 部署后跑 `--selftest`、`--sim-only`、`HGE_OFFSCREEN=1 --render-test`，
 再由人工做菜单冒烟。

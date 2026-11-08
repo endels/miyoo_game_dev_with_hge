@@ -173,4 +173,4 @@ ctest --test-dir build-native --output-on-failure
 ./build-native/bubble_level1 --render-test --frames 45 --replay tests/replay/smoke.txt
 ```
 
-真机冒烟：SSH 后用 `BUBBLE_OFFSCREEN=1` 跑 `--render-test --shot`，再拉回 PPM/PNG 检查画面。
+真机冒烟：SSH 后用 `HGE_OFFSCREEN=1` 跑 `--render-test --shot`，再拉回 PPM/PNG 检查画面。

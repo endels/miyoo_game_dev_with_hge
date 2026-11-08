@@ -232,10 +232,10 @@ void retro_run(void)
 
     {
         static int fc = 0;
-        const char* dp = getenv("BUBBLE_DUMP");
+        const char* dp = getenv("HGE_DUMP");
         if (dp) {
             int at = 60;
-            const char* dfs = getenv("BUBBLE_DUMP_FRAME");
+            const char* dfs = getenv("HGE_DUMP_FRAME");
             if (dfs) at = atoi(dfs);
             if (fc == at) writePPM(dp, fb, w, h, pitch);
         }
@@ -257,9 +257,9 @@ void retro_run(void)
     }
 
     // Pace to 60 fps so audio delivery and timing stay stable.
-    // BUBBLE_UNCAPPED=1 disables.
+    // HGE_UNCAPPED=1 disables.
     {
-        static const bool uncapped = getenv("BUBBLE_UNCAPPED") != nullptr;
+        static const bool uncapped = getenv("HGE_UNCAPPED") != nullptr;
         if (!uncapped) {
             const double spent = nowSec() - tFrame0;
             const double target = 1.0 / 60.0;

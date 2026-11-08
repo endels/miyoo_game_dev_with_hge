@@ -3,7 +3,7 @@
 # audio, input and exit; the core reuses the HGE+SDL2 game and software renderer.
 progdir=$(cd -- "$(dirname "$0")" >/dev/null 2>&1 && pwd -P)
 
-export BUBBLE_DIR="$progdir/"
+export HGE_DIR="$progdir/"
 export LD_LIBRARY_PATH="$progdir/lib:/mnt/SDCARD/.tmp_update/lib/parasyte:/customer/lib:/config/lib:/lib:/usr/lib:$LD_LIBRARY_PATH"
 
 for c in /sys/devices/system/cpu/cpu[0-9]*; do
