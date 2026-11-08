@@ -6,6 +6,7 @@
 #include "app/bubble/battle.h"
 #include "app/bubble/duel.h"
 #include "app/bubble/render.h"
+#include "app/bubble/mode_select.h"
 
 #include <memory>
 #include <string>
@@ -25,6 +26,7 @@ struct BubbleOptions {
     int         retries = 3;          // consecutive stage losses before GAME OVER
     int         aiLevel = kAiLevelDefault;  // CPU difficulty dial (1..kAiLevels)
     std::string selfPath;
+    bool        modeSelect = false;   // startup ring menu
 };
 
 class BubbleApp : public hge::IGame {
@@ -38,10 +40,19 @@ public:
     void OnResize(int width, int height) override;
     void Shutdown() override;
 
+    // Ring menu entry points (called through the mode table).
+    void EnterDuel();
+    void EnterStage();
+    int   ModeSel() const        { return m_modeSel; }
+    int   ModeHover() const      { return m_modeHover; }
+    float ModeLockTimer() const  { return m_modeLockT; }
+    float ModeShakeTimer() const { return m_modeShakeT; }
+    bool  InModeSelect() const   { return m_phase == Phase::MODE_SELECT; }
+
 private:
     struct AudioPack;
 
-    enum class Phase { PLAY, CLEAR, DRAFT, OVER, BRIEF };
+    enum class Phase { PLAY, CLEAR, DRAFT, OVER, BRIEF, MODE_SELECT };
 
     void startStage(int stage, bool showBrief = true);
     void buildStage0(Game& game);
@@ -55,6 +66,8 @@ private:
     void updateAudio(float dt);
     void updateDuel(float dt, const hge::Input& in);
     void rematchDuel();
+    void updateModeSelect(float dt, const hge::Input& in);
+    void enterMode(int slot);
 
     // CPU difficulty dial: clicking the CPU dino cycles 1..kAiLevels.
     void setAiLevel(int level, const char* why);
@@ -134,6 +147,15 @@ private:
 
     int       m_aiLevel = kAiLevelDefault;
     float     m_aiLevelFlash = 0.0f;   // seconds left of the floating "LV n"
+
+    // Ring menu state.
+    int   m_modeSel = 0;
+    int   m_modeHover = -1;
+    int   m_navDir = 0;
+    bool  m_navHeld = false;
+    float m_navTimer = 0.0f;
+    float m_modeLockT = 0.0f;
+    float m_modeShakeT = 0.0f;
 
     bool m_ready = false;
 };

@@ -1,4 +1,5 @@
 #include "app/bubble/render.h"
+#include "app/bubble/mode_select.h"
 
 #include "app/bubble/game.h"
 
@@ -536,6 +537,161 @@ void FreeTextures(RenderCtx& c)
         }
     }
     c = RenderCtx();
+}
+
+// ------------------------------------------------------------------ mode select
+namespace {
+
+// Per-slot name baseline, taken from the layout spec (see deliverables/
+// duel-mode-select-spec.md). Kept as data so a new slot only needs a table row.
+const float kModeNameY[kModeSlots] = { 208.0f, 132.0f, 415.0f, 340.0f, 415.0f, 132.0f };
+
+float modeShakeDx(float t)
+{
+    // 150 ms: +5, -5, +3, -2, then 0. Sampled on a 1/60 s clock.
+    const int f = (int)((0.15f - t) * 60.0f);
+    static const float kDx[9] = { 5.0f, -5.0f, 3.0f, -2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    if (f < 0) return 0.0f;
+    if (f >= 9) return 0.0f;
+    return kDx[f];
+}
+
+int modeInkWidth(const char* s, int scale)
+{
+    const int n = (int)strlen(s);
+    if (n <= 0) return 0;
+    return (n - 1) * 11 * scale + 20 * scale;
+}
+
+} // namespace
+
+void RenderModeSelect(RenderCtx& c, int sel, int hover, float lockTimer,
+                      float shakeTimer, double time)
+{
+    IGfx* g = c.g;
+    const float T = (float)time;
+    const float shake = shakeTimer > 0.0f ? modeShakeDx(shakeTimer) : 0.0f;
+
+    // 1. dim the board behind the menu
+    quad(g, nullptr, 0, 0, (float)kWinW, (float)kWinH, 0x99080B12);
+
+    // 2. soft glow where the ring sits
+    if (c.ring) quad(g, c.ring, 180, 146, 600, 280, 0x1AA0C0FF);
+
+    // 3. ring: 72 dots every 5 degrees, brighter and bigger next to a slot
+    for (int i = 0; i < 72; ++i) {
+        const float deg = (float)i * 5.0f;
+        const float a = deg * 3.14159265f / 180.0f;
+        const float x = 480.0f + 300.0f * cosf(a);
+        const float y = 286.0f + 140.0f * sinf(a);
+        float d = 180.0f;
+        int nearSlot = -1;
+        for (int sl = 0; sl < kModeSlots; ++sl) {
+            float dd = fabsf(deg - (-90.0f + (float)sl * 60.0f));
+            if (dd > 180.0f) dd = 360.0f - dd;
+            if (dd < d) { d = dd; nearSlot = sl; }
+        }
+        if (d <= 12.0f && nearSlot >= 0) {
+            const bool isSel = (nearSlot == sel);
+            const u32 col = isSel ? 0xE0FFE08A : (nearSlot == hover ? 0xB0C8E8FF : 0x60A0C0FF);
+            quad(g, c.dot, x - 4, y - 4, 8, 8, col);
+        } else {
+            quad(g, c.dot, x - 3, y - 3, 6, 6, 0x50A0C0FF);
+        }
+    }
+
+    // 4. slots (selected last so it covers its neighbours)
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int sl = 0; sl < kModeSlots; ++sl) {
+            const bool isSel = (sl == sel);
+            if ((pass == 0) == isSel) continue;   // first pass: unselected
+            const ModeInfo* m = ModeAtSlot(sl);
+            if (!m) continue;
+            float cx, cy;
+            ModeSlotPos(sl, &cx, &cy);
+            const float sx = (isSel ? shake : 0.0f);
+            const bool empty = (m->id == ModeId::kNone);
+            const float box = isSel ? 110.0f : 96.0f;
+            const float hw = box * 0.5f;
+
+            if (isSel && c.ring) {
+                const u32 glow = (u32)(0x30 + 0x18 * (0.5 + 0.5 * sinf(T * 4.0f))) << 24;
+                quad(g, c.ring, cx - 68, cy - 68, 136, 136, glow | 0x00FFE08A);
+            }
+
+            if (empty) {
+                // Shape, not just colour: empty slots are a dotted circle.
+                const float r = isSel ? 44.0f : 38.0f;
+                const u32 col = isSel ? 0xFF8FA6C4 : 0xFF44536B;
+                for (int k = 0; k < 24; ++k) {
+                    const float a = (float)k * 15.0f * 3.14159265f / 180.0f;
+                    quad(g, c.dot, cx + sx + r * cosf(a) - 3, cy + r * sinf(a) - 3, 6, 6, col);
+                }
+                centreText(c, cx + sx - 9.0f, cy - 26.0f, "?", 2.0f,
+                           isSel ? 0xFFEAF0FA : 0xFF5A6A82);
+            } else {
+                const u32 edge = isSel ? 0xFFFFD24A : 0xFF2E3B52;
+                const float t = isSel ? 3.0f : 2.0f;
+                quad(g, nullptr, cx - hw, cy - hw, box, t, edge);
+                quad(g, nullptr, cx - hw, cy + hw - t, box, t, edge);
+                quad(g, nullptr, cx - hw, cy - hw, t, box, edge);
+                quad(g, nullptr, cx + hw - t, cy - hw, t, box, edge);
+
+                if (isSel) {
+                    const u32 br = 0xFFFFE08A;
+                    const float L = 12.0f, W = 3.0f, in = 4.0f;
+                    quad(g, nullptr, cx - hw + in, cy - hw + in, L, W, br);
+                    quad(g, nullptr, cx - hw + in, cy - hw + in, W, L, br);
+                    quad(g, nullptr, cx + hw - in - L, cy - hw + in, L, W, br);
+                    quad(g, nullptr, cx + hw - in - W, cy - hw + in, W, L, br);
+                    quad(g, nullptr, cx - hw + in, cy + hw - in - W, L, W, br);
+                    quad(g, nullptr, cx - hw + in, cy + hw - in - L, W, L, br);
+                    quad(g, nullptr, cx + hw - in - L, cy + hw - in - W, L, W, br);
+                    quad(g, nullptr, cx + hw - in - W, cy + hw - in - L, W, L, br);
+                }
+
+                IGfxTexture* icon = nullptr;
+                if (sl == 0) icon = c.cannonBase;
+                else if (sl == 3) icon = c.bubblesBig[0] ? c.bubblesBig[0] : c.bubbles[0];
+                if (icon) quad(g, icon, cx + sx - 42, cy - 42, 84, 84, 0xFFFFFFFF);
+                else centreText(c, cx + sx - 9.0f, cy - 26.0f, "?", 2.0f, 0xFF5A6A82);
+            }
+
+            // name
+            const u32 nameCol = empty ? (isSel ? 0xFF8FA6C4 : 0xFF5A6A82)
+                                      : (isSel ? 0xFFEAF0FA : 0xFF9FB3CE);
+            centreText(c, cx - 4.5f, kModeNameY[sl], m->name, 1.0f, nameCol);
+
+            // corner chip
+            if (m->tag) {
+                const int iw = modeInkWidth(m->tag, 1);
+                quad(g, nullptr, cx - 44, cy - 44, (float)iw + 8, 18, 0xC0080B12);
+                quad(g, nullptr, cx - 44, cy - 44, (float)iw + 8, 1,
+                     isSel ? 0xFFFFD24A : 0xFF2E3B52);
+                text(c, cx - 40, cy - 42, m->tag, 1.0f,
+                     empty ? 0xFF5A6A82 : 0xFFFFE08A);
+            }
+        }
+    }
+
+    // 5. title + centre hints
+    centreText(c, 480.0f - 13.5f, 10, "SELECT MODE", 3.0f, 0xFFEAF0FA);
+    centreText(c, 480.0f - 4.5f, 258, "LEFT / RIGHT  CHOOSE", 1.0f, 0xFF9FB3CE);
+    centreText(c, 480.0f - 4.5f, 290, "A / SPACE  CONFIRM", 1.0f, 0xFF9FB3CE);
+
+    // 6. bottom bar: mode name on the left, its one-liner to the right
+    const ModeInfo* cur = ModeAtSlot(sel);
+    quad(g, nullptr, 0, 484, (float)kWinW, 2, 0xFF2E3B52);
+    quad(g, nullptr, 0, 486, (float)kWinW, 54, 0xFF0A0E16);
+    if (cur) {
+        const int nw = modeInkWidth(cur->name, 2);
+        text(c, 24, 488, cur->name, 2.0f, 0xFFEAF0FA);
+        const bool locked = lockTimer > 0.0f;
+        const char* blurb = locked ? "LOCKED - COMING SOON" : cur->blurb;
+        const bool blinkOn = fmodf(T * 4.3f, 1.0f) < 0.55f;
+        const u32 bcol = locked ? (blinkOn ? 0xFFFF7A5A : 0xFF7A3A2A) : 0xFF9FB3CE;
+        text(c, 24.0f + (float)nw + 16.0f, 500, blurb ? blurb : "", 1.0f, bcol);
+    }
 }
 
 void RenderFrame(RenderCtx& c, Side s[2], double time, float resultTimer,

@@ -193,6 +193,7 @@ hge_set_warnings(hge)
 set(BUBBLE_COMMON_SRC
     games/bubble/src/app/bubble/battle.cpp
     games/bubble/src/app/bubble/duel.cpp
+    games/bubble/src/app/bubble/mode_select.cpp
     games/bubble/src/app/bubble/bubble_app.cpp
     games/bubble/src/app/bubble/game.cpp
     games/bubble/src/app/bubble/render.cpp)

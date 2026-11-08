@@ -514,6 +514,17 @@ bool BubbleApp::Init(IGfx* gfx, int /*width*/, int /*height*/)
                (int)m_sidesPtr[0].game.Risers().size(), (int)m_sidesPtr[1].game.Risers().size());
     }
 
+    if (m_opt.modeSelect) {
+        m_phase = Phase::MODE_SELECT;
+        m_modeSel = ModeDefaultSlot();
+        const char* why = "";
+        if (!ModeTableSelfCheck(&why))
+            fprintf(stderr, "[mode] table self-check FAILED: %s\n", why);
+        fprintf(stderr, "[mode] select=1 slot=%d\n", m_modeSel);
+    } else {
+        fprintf(stderr, "[mode] select=0\n");
+    }
+
     m_ready = true;
     if (m_opt.autoplay)
         fprintf(stderr, "[game] autoplay=1 retries=%d\n", m_retries);
@@ -819,6 +830,106 @@ void BubbleApp::rematchDuel()
     fprintf(stderr, "[duel] rematch seed=%d\n", m_duelSeed);
 }
 
+// ---------------------------------------------------------------- mode select
+// The ring menu lives in phase MODE_SELECT. Its table (mode_select.cpp) calls
+// back into these entry points, so adding a mode never touches the state
+// machine here: fill one table row and provide an enter function.
+void BubbleApp::EnterDuel()
+{
+    m_opt.duel = true;
+    startStage(0, false);        // the duel branch takes over both boards
+    m_phase = Phase::PLAY;
+    fprintf(stderr, "[mode] enter duel\n");
+}
+
+void BubbleApp::EnterStage()
+{
+    m_opt.duel = false;
+    startStage(0, true);         // stage briefing, PLAY after the confirm
+    m_phase = Phase::BRIEF;
+    fprintf(stderr, "[mode] enter stage\n");
+}
+
+void enterDuelMode(BubbleApp& app)  { app.EnterDuel(); }
+void enterStageMode(BubbleApp& app) { app.EnterStage(); }
+
+void BubbleApp::enterMode(int slot)
+{
+    const ModeInfo* m = ModeAtSlot(slot);
+    if (!m || !m->enter) return;
+    m->enter(*this);
+}
+
+void BubbleApp::updateModeSelect(float dt, const hge::Input& in)
+{
+    if (m_modeLockT > 0.0f)  m_modeLockT  -= dt;
+    if (m_modeShakeT > 0.0f) m_modeShakeT -= dt;
+
+    // Mouse: hovering only moves the highlight. A click selects and confirms in
+    // one action, so nobody has to click twice.
+    if (in.mouseMoved || in.clickPressed) {
+        const int mx = in.clickPressed ? in.clickX : in.mouseX;
+        const int my = in.clickPressed ? in.clickY : in.mouseY;
+        int hit = -1;
+        for (int sl = 0; sl < kModeSlots; ++sl) {
+            float cx, cy;
+            ModeSlotPos(sl, &cx, &cy);
+            const float dx = (float)mx - cx, dy = (float)my - cy;
+            if (dx * dx + dy * dy <= 58.0f * 58.0f) { hit = sl; break; }
+        }
+        if (in.mouseMoved) m_modeHover = hit;
+        if (in.clickPressed && hit >= 0) {
+            m_modeSel = hit;
+            const ModeInfo* m = ModeAtSlot(hit);
+            if (m && m->enter) {
+                enterMode(hit);
+            } else {
+                // Clicking a locked slot must answer too, exactly like fire.
+                m_modeLockT = 0.5f;
+                m_modeShakeT = 0.15f;
+                if (m_cStick) audio::Play(*m_cStick, 0.55f);
+                fprintf(stderr, "[mode] locked slot=%d\n", m_modeSel);
+            }
+            return;
+        }
+    }
+
+    // Keyboard: aimLeft/aimRight are held signals. The first step is immediate,
+    // repeats start after 0.35 s and then fire every 0.12 s.
+    const int dir = (in.aimRight ? 1 : 0) - (in.aimLeft ? 1 : 0);
+    if (dir == 0) {
+        m_navHeld = false;
+        m_navDir = 0;
+        m_navTimer = 0.0f;
+    } else if (!m_navHeld || dir != m_navDir) {
+        m_navHeld = true;
+        m_navDir = dir;
+        m_navTimer = 0.35f;
+        m_modeSel = ModeNextSlot(m_modeSel, dir);
+        if (m_cStick) audio::Play(*m_cStick, 0.30f);
+    } else {
+        m_navTimer -= dt;
+        if (m_navTimer <= 0.0f) {
+            m_navTimer = 0.12f;
+            m_modeSel = ModeNextSlot(m_modeSel, dir);
+            if (m_cStick) audio::Play(*m_cStick, 0.30f);
+        }
+    }
+
+    if (in.firePressed) {
+        const ModeInfo* m = ModeAtSlot(m_modeSel);
+        if (m && m->enter) {
+            enterMode(m_modeSel);
+        } else {
+            // Empty slot: no phase change, but the input must never be silent.
+            m_modeLockT = 0.5f;
+            m_modeShakeT = 0.15f;
+            if (m_cStick) audio::Play(*m_cStick, 0.55f);
+            fprintf(stderr, "[mode] locked slot=%d\n", m_modeSel);
+        }
+    }
+}
+
 void BubbleApp::Update(float dt, const hge::Input& inRaw)
 {
     hge::Input synthesized = inRaw;
@@ -835,6 +946,10 @@ void BubbleApp::Update(float dt, const hge::Input& inRaw)
     if (m_shake > 0.0f) m_shake -= dt;
 
     switch (m_phase) {
+    case Phase::MODE_SELECT:
+        updateModeSelect(dt, in);
+        break;
+
     case Phase::BRIEF:
         if (in.firePressed) {
             m_phase = Phase::PLAY;
@@ -1066,6 +1181,12 @@ void BubbleApp::updateAudio(float /*dt*/)
 void BubbleApp::Render(IGfx* /*gfx*/, double time)
 {
     if (!m_ready) return;
+
+    if (m_phase == Phase::MODE_SELECT) {
+        RenderModeSelect(m_render, m_modeSel, m_modeHover, m_modeLockT, m_modeShakeT,
+                         time + m_opt.animOffset);
+        return;
+    }
 
     HudState hud;
     hud.stage = m_stage + 1;

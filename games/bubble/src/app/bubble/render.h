@@ -87,6 +87,11 @@ void FreeTextures(RenderCtx& c);
 void RenderFrame(RenderCtx& c, Side sides[2], double time, float resultTimer,
                  const HudState& hud);
 
+// Ring mode select. Pure drawing: the selection/hover/timers come from the app
+// so the menu never reads game rules.
+void RenderModeSelect(RenderCtx& c, int sel, int hover, float lockTimer,
+                      float shakeTimer, double time);
+
 } // namespace bbl
 
 #endif // BUBBLE_RENDER_H

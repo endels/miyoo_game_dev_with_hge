@@ -38,6 +38,8 @@ struct Options {
     bool        debugChain = false;
     bool        audioStress = false;
     bool        autoplay = false;
+    bool        selectMenu = false;   // --select: force the ring menu
+    bool        modeGiven = false;    // --mode <name> was passed
     bool        duel = false;
     bool        mute = false;
     int         retries = 3;
@@ -73,6 +75,12 @@ Options parseArgs(int argc, char** argv)
         else if (!strcmp(argv[i], "--debug-chain")) o.debugChain = true;
         else if (!strcmp(argv[i], "--audio-stress")) o.audioStress = true;
         else if (!strcmp(argv[i], "--autoplay")) o.autoplay = true;
+        else if (!strcmp(argv[i], "--select")) o.selectMenu = true;
+        else if (!strcmp(argv[i], "--mode") && i + 1 < argc) {
+            const char* m = argv[++i];
+            o.modeGiven = true;
+            o.duel = (strcmp(m, "duel") == 0);
+        }
         else if (!strcmp(argv[i], "--duel")) o.duel = true;
         else if (!strcmp(argv[i], "--duel-sim")) o.duelSim = true;
         else if (!strcmp(argv[i], "--seed") && i + 1 < argc) o.seed = (unsigned)strtoul(argv[++i], nullptr, 0);
@@ -207,6 +215,19 @@ int runGame(int argc, char** argv)
     gameOpt.autoplay = opts.autoplay;
     gameOpt.duel = opts.duel;
     if (opts.mute) audio::SetMuted(true);
+    // Ring menu: no mode on the command line -> show the selector. Every
+    // dev/test path (duel, autoplay, screenshots, replays, warmup, debug
+    // states) goes straight to its mode so headless runs never hit the UI.
+    bool showSelect = true;
+    if (opts.duel || opts.modeGiven || opts.autoplay || opts.shotPath ||
+        opts.frames > 0 || opts.renderTest || opts.replayPath ||
+        opts.warmup > 0 || opts.debugClear || opts.debugDraft || opts.debugChain)
+        showSelect = false;
+    if (opts.selectMenu) showSelect = true;
+    gameOpt.modeSelect = showSelect;
+    fprintf(stderr, "[mode] select=%d (duel=%d modeGiven=%d)\n",
+            (int)showSelect, (int)opts.duel, (int)opts.modeGiven);
+
     gameOpt.retries = opts.retries;
     gameOpt.aiLevel = opts.aiLevel;
     if (argc > 0 && argv[0]) gameOpt.selfPath = argv[0];
