@@ -3,6 +3,10 @@
 
 #include "plat_sdl2_internal.h"
 
+#if defined(HGE_GFX_BLIT)
+#include "gfx/gfx_blit.h"   // BlitFlush: the blitter needs an explicit frame boundary
+#endif
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -372,6 +376,11 @@ void* backendGLGetProc(const char* /*name*/)
 
 void backendSwapBuffers()
 {
+#if defined(HGE_GFX_BLIT)
+    // gfx_blit queues quads and only rasterizes on an explicit frame
+    // boundary; without this every blit frame would present an empty buffer.
+    BlitFlush();
+#endif
     if (g_ren) SDL_RenderPresent(g_ren);
 
     if (g_useGfx) { presentGfx(); return; }

@@ -125,9 +125,18 @@ public:
             }
         }
 #endif
+        // Thread handover costs about 6 ms per frame on a Cortex-A7 while the
+        // worker only wins 1.6x on the pixels it rasterizes, so the worker is
+        // only worth waking above a workload threshold (measured on a Miyoo,
+        // 1.2 GHz, 640x480:  single t = 0.25 + 47.5*P ns,  mt = 3.73 + 25.9*P ns
+        // with P in framebuffer pixels, so the crossover is near 160k px).
+        // Below it, rasterize inline and skip the handover.
+        const char* mtPx = getenv("HGE_BLIT_MT_PX");
+        m_mtMinPx = mtPx ? atoll(mtPx) : kDefaultMtMinPx;
+        if (m_mtMinPx < 0) m_mtMinPx = 0;
         snprintf(m_info, sizeof(m_info), "blit %dx%d (logical %dx%d) %s%s",
                  m_w, m_h, lw, lh, m_defer ? "defer" : "immediate",
-                 m_hasWorker ? "+mt" : "");
+                 m_hasWorker ? (m_mtMinPx > 0 ? "+mt(auto)" : "+mt") : "");
         fprintf(stderr, "[blit] %s\n", m_info);
         return true;
     }
@@ -326,8 +335,15 @@ public:
         }
         if (m_quads.empty()) return;
 #if HGE_FEATURE_THREADS
+        const long long costPx = estimateCostPx();
+        if (getenv("HGE_BLIT_LOG")) {
+            static int pl = 0;
+            if (++pl % 60 == 0)
+                fprintf(stderr, "[blit] frame quads=%d cost_px=%lld mt_min=%lld\n",
+                        (int)m_quads.size(), costPx, m_mtMinPx);
+        }
         const int mid = m_h / 2;
-        if (!m_hasWorker || m_quads.size() < 16) {
+        if (!m_hasWorker || costPx <= m_mtMinPx) {
             renderBand(0, m_h);
         } else {
             {
@@ -373,6 +389,32 @@ private:
         }
     }
 #endif
+
+    // Work estimate for the queued frame, in framebuffer pixels. Quads drawn
+    // with a transform go through the triangle rasterizer, which costs about
+    // 4.4x per pixel on a Cortex-A7, so they are weighted up.
+    long long estimateCostPx() const
+    {
+        long long px = 0;
+        for (const QuadItem& q : m_quads) {
+            float minx = q.v[0].x, maxx = minx;
+            float miny = q.v[0].y, maxy = miny;
+            for (int i = 1; i < 4; ++i) {
+                if (q.v[i].x < minx) minx = q.v[i].x;
+                if (q.v[i].x > maxx) maxx = q.v[i].x;
+                if (q.v[i].y < miny) miny = q.v[i].y;
+                if (q.v[i].y > maxy) maxy = q.v[i].y;
+            }
+            const float w = (maxx - minx) * m_s;
+            const float h = (maxy - miny) * m_s;
+            if (w <= 0.0f || h <= 0.0f) continue;
+            long long a = (long long)(w * h);
+            if (q.xf) a = a * 5;
+            px += a;
+            if (px > (1LL << 40)) break;
+        }
+        return px;
+    }
 
     void renderBand(int by0, int by1)
     {
@@ -715,6 +757,8 @@ private:
     f32 m_xf[6] = {1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
     bool m_xfActive = false;
     bool m_defer = false;
+    static const long long kDefaultMtMinPx = 160000;
+    long long m_mtMinPx = kDefaultMtMinPx;
     bool m_clip = false;
     int m_cx = 0, m_cy = 0, m_cw = 0, m_ch = 0;
     char m_info[128] = "blit not initialised";
