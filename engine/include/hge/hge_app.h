@@ -5,7 +5,7 @@
 // IGfx; the engine owns window setup, timing, frame pacing, screenshot and
 // shutdown.
 
-#include "hge/hge_config.h"
+#include "hge_config.h"
 #include "hge_types.h"
 
 class IGfx;

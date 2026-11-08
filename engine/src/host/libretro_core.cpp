@@ -3,7 +3,7 @@
 // stepping, video/audio handoff and input mapping.
 
 #include "hge_libretro.h"
-#include "hge/hge_config.h"
+#include "hge_config.h"
 #include "hge_audio.h"
 
 #include "platform/plat_libretro.h"

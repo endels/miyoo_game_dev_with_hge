@@ -9,7 +9,7 @@
 
 #include "gfx/gfx_blit.h"
 #include "platform/plat.h"
-#include "hge/hge_config.h"
+#include "hge_config.h"
 
 #include <algorithm>
 #include <cmath>

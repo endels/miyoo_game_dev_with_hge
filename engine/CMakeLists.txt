@@ -57,7 +57,7 @@ option(HGE_INSTALL "Generate install/export rules so consumers can find_package(
 set(HGE_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/hge/hge_config.h.in"
-    "${HGE_GENERATED_DIR}/hge/hge_config.h"
+    "${HGE_GENERATED_DIR}/hge_config.h"
     @ONLY)
 
 if(NOT HGE_PLATFORM MATCHES "^(desktop|miyoo)$")
@@ -271,6 +271,30 @@ if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING AND HGE_INSTALL)
 endif()
 
 # ---------------------------------------------------------------------------
+# Package consumer probe: install into a throwaway prefix, then build an
+# out-of-tree project that only does find_package(hge). Skipped when no SDL2
+# CMake package is available, because hgeConfig resolves SDL2::SDL2-static
+# through find_dependency(SDL2).
+# ---------------------------------------------------------------------------
+if(HGE_BUILD_TESTS AND HGE_INSTALL AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32
+   AND NOT HGE_PLATFORM STREQUAL "miyoo")
+    find_file(HGE_SDL2_PACKAGE_CONFIG
+        NAMES SDL2Config.cmake sdl2-config.cmake
+        PATH_SUFFIXES cmake/SDL2
+        PATHS /usr/lib /usr/lib64 /usr/local/lib
+              /usr/lib/${CMAKE_LIBRARY_ARCHITECTURE})
+    if(HGE_SDL2_PACKAGE_CONFIG)
+        add_test(NAME hge_package_consumer
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_package_consumer.sh"
+                    "${CMAKE_BINARY_DIR}"
+                    "${CMAKE_BINARY_DIR}/package-test-prefix"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/package_consumer")
+    else()
+        message(STATUS "hge_package_consumer test skipped (no SDL2 CMake package)")
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Install / export so a consumer can use the engine as a package
 # ---------------------------------------------------------------------------
 if(HGE_INSTALL)
@@ -282,7 +306,7 @@ if(HGE_INSTALL)
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/hge/"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/hge"
         FILES_MATCHING PATTERN "*.h")
-    install(FILES "${HGE_GENERATED_DIR}/hge/hge_config.h"
+    install(FILES "${HGE_GENERATED_DIR}/hge_config.h"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/hge")
 
     configure_package_config_file(
