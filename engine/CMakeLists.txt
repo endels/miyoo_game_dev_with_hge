@@ -226,12 +226,12 @@ hge_set_warnings(hge)
 # Examples: hello_game is the include-boundary probe, m1_demo the raw-plat demo
 # ---------------------------------------------------------------------------
 if(HGE_HOST STREQUAL "standalone")
-    add_executable(hello_game "${HGE_REPO_ROOT}/examples/hello_game/main.cpp")
+    add_executable(hello_game "${CMAKE_CURRENT_SOURCE_DIR}/examples/hello_game/main.cpp")
     target_link_libraries(hello_game PRIVATE hge)
     hge_set_warnings(hello_game)
 
     if(HGE_GFX STREQUAL "gl")
-        add_executable(m1_demo "${HGE_REPO_ROOT}/examples/m1_demo/m1_demo.cpp")
+        add_executable(m1_demo "${CMAKE_CURRENT_SOURCE_DIR}/examples/m1_demo/m1_demo.cpp")
         target_include_directories(m1_demo PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(m1_demo PRIVATE hge)
         hge_set_warnings(m1_demo)
@@ -242,11 +242,7 @@ endif()
 # Engine self-tests (never cross-compiled)
 # ---------------------------------------------------------------------------
 if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING AND HGE_INSTALL)
-    if(HGE_STANDALONE_REPO)
-        set(HGE_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests")
-    else()
-        set(HGE_TEST_DIR "${HGE_REPO_ROOT}/tests")
-    endif()
+    set(HGE_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/tests")
 
     add_executable(gfx_conformance_blit
         "${HGE_TEST_DIR}/gfx_conformance_blit.cpp"

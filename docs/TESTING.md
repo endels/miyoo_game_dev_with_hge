@@ -29,7 +29,7 @@ ctest --test-dir build-native --output-on-failure
 cmp /tmp/a.ppm /tmp/b.ppm
 
 # 脚本输入回放（固定步长）
-./build-native/bubble_level1 --render-test --frames 46 --replay tests/replay/smoke.txt
+./build-native/bubble_level1 --render-test --frames 46 --replay games/bubble/tests/replay/smoke.txt
 
 # 机器人自动对局（真实窗口/音频，长期压测用）
 ./build-native/bubble_level1 --autoplay
@@ -71,10 +71,10 @@ cmp /tmp/a.ppm /tmp/b.ppm
 
 ## Golden 更新
 
-`tests/golden/sim_5.txt` 是 `--sim-only 5` 的完整输出。逻辑改动导致校验和变化时，先确认变化符合预期，再执行：
+`games/bubble/tests/golden/sim_5.txt` 是 `--sim-only 5` 的完整输出。逻辑改动导致校验和变化时，先确认变化符合预期，再执行：
 
 ```bash
-./build-native/bubble_level1 --sim-only 5 > tests/golden/sim_5.txt
+./build-native/bubble_level1 --sim-only 5 > games/bubble/tests/golden/sim_5.txt
 ```
 
 ## 无线程构建
@@ -90,7 +90,7 @@ ctest --test-dir build-native-nothreads --output-on-failure
 
 ## 边界探针
 
-`examples/hello_game` 只 include `engine/include/hge`，不碰 `engine/src`。
+`engine/examples/hello_game` 只 include `engine/include/hge`，不碰 `engine/src`。
 它能编译就说明引擎/游戏公共头边界没有泄漏；`linux-native` 里会一起构建。
 
 ## gdb 附加调试

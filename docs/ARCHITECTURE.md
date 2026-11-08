@@ -47,7 +47,7 @@ engine/src         引擎实现（对游戏不可见）
 - 引擎拥有窗口、计时、输入语义化、截图、退出和资源/系统服务。
 - 游戏实现 `IGame::Init/Update/Render/OnResize/Shutdown`，只消费语义输入。
 - 后端选择由 `hge::CreateGfx()` 完成，游戏不感知 GL/SDL/blit。
-- 示例：`examples/hello_game` 是边界探针，只能使用公共头。
+- 示例：`engine/examples/hello_game` 是边界探针，只能使用公共头。
 
 ## 平台与呈现
 

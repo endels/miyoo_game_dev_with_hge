@@ -1,6 +1,6 @@
 ﻿"""Bake the Bubble Level 1 asset pack from FSM / parallax sources.
 
-Output: engine/hge-sdl/assets/game.pak
+Output: games/bubble/assets/game.pak
 
 Format
     char  magic[4]      "HGEP"

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Collect build-environment facts before porting. Read-only, prints to stdout.
-# Usage: sh tools/probe_env.sh 2>&1 | tee env-report.txt
+# Usage: sh engine/tools/probe_env.sh 2>&1 | tee env-report.txt
 
 say() { printf '\n===== %s =====\n' "$1"; }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -57,7 +57,7 @@ have xvfb-run && echo "xvfb-run: yes" || echo "xvfb-run: no"
 
 say "repo state"
 have git && git log --oneline -3 2>/dev/null
-ls assets/*.pak 2>/dev/null || echo "assets/*.pak missing"
+ls games/bubble/assets/*.pak 2>/dev/null || echo "games/bubble/assets/*.pak missing"
 
 say "cmake configure probe (no build)"
 if [ -d third_party/SDL2 ]; then

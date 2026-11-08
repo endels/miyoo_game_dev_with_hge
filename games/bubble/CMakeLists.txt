@@ -35,14 +35,14 @@ if(HGE_HOST STREQUAL "standalone")
     # The packs are link dependencies: touching audio.pak must relink, otherwise
     # the exe keeps shipping the copies baked into it at the previous link.
     if(HGE_PLATFORM STREQUAL "desktop")
-        set(BUBBLE_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets")
+        set(BUBBLE_ASSET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
         set_property(TARGET bubble_level1 APPEND PROPERTY LINK_DEPENDS
             "${BUBBLE_ASSET_DIR}/game.pak"
             "${BUBBLE_ASSET_DIR}/audio.pak")
         find_program(HGE_PYTHON NAMES python python3)
         if(HGE_PYTHON)
             add_custom_command(TARGET bubble_level1 POST_BUILD
-                COMMAND "${HGE_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/pack_exe.py"
+                COMMAND "${HGE_PYTHON}" "${HGE_ENGINE_DIR}/tools/pack_exe.py"
                         "$<TARGET_FILE:bubble_level1>"
                         "${BUBBLE_ASSET_DIR}/game.pak"
                         "${BUBBLE_ASSET_DIR}/audio.pak"
@@ -54,14 +54,14 @@ if(HGE_HOST STREQUAL "standalone")
 
     if(HGE_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING AND UNIX)
         add_test(NAME bubble_sim_golden
-            COMMAND sh "${CMAKE_SOURCE_DIR}/tests/run_host_tests.sh"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_host_tests.sh"
                     "$<TARGET_FILE:bubble_level1>"
-                    "${CMAKE_SOURCE_DIR}/tests/golden/sim_5.txt")
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/sim_5.txt")
         # Same idea for --duel-sim: freezes default AI play across a seed range.
         add_test(NAME bubble_duel_golden
-            COMMAND sh "${CMAKE_SOURCE_DIR}/tests/run_duel_tests.sh"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_duel_tests.sh"
                     "$<TARGET_FILE:bubble_level1>"
-                    "${CMAKE_SOURCE_DIR}/tests/golden/duel_default.txt")
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/golden/duel_default.txt")
     endif()
 else()
     add_library(bubble_libretro MODULE

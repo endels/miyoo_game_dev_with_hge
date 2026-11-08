@@ -75,7 +75,7 @@ cmake --preset miyoo-cross
 cmake --build --preset miyoo-cross -j"$(nproc)"
 ```
 
-设备部署步骤见 `package/DEPLOY.md`。
+设备部署步骤见 `games/bubble/package/DEPLOY.md`。
 
 ## Presets
 

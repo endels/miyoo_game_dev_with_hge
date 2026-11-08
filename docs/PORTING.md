@@ -32,7 +32,7 @@
 
 ## 验收清单
 
-- 公共头自包含；`examples/hello_game` 能编译。
+- 公共头自包含；`engine/examples/hello_game` 能编译。
 - 全 preset 编译；主机 CTest 通过。
 - `--sim-only` checksum 稳定；确定性渲染可复现。
 - 设备人工冒烟通过。

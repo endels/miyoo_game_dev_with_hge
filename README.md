@@ -13,7 +13,7 @@
 | 架构与引擎/游戏边界 | `docs/ARCHITECTURE.md` |
 | 测试、确定性渲染、replay | `docs/TESTING.md` |
 | 新平台/后端/宿主移植 | `docs/PORTING.md` |
-| Miyoo 部署包与 scp 步骤 | `package/DEPLOY.md` |
+| Miyoo 部署包与 scp 步骤 | `games/bubble/package/DEPLOY.md` |
 | 热点/SSH 工具目录 | `bench_tools/README.md` |
 | 热点原理、排障、回滚 | `bench_tools/miyoo_hotspot_default.md` |
 
@@ -76,19 +76,24 @@ SDL2 源码查找顺序：
 ## 3. 目录结构
 
 ```
-engine/include/hge/        引擎公共头（types / gfx / audio / resource / system / app / libretro）
-engine/src/platform/       平台接口与 desktop / miyoo / libretro 后端
-engine/src/gfx/            IGfx 实现：gfx_gl / gfx_sdl / gfx_blit
-engine/src/core/           主循环、后端工厂、系统服务
-engine/src/audio/          混音器
-engine/src/resource/       pak 加载
-engine/src/host/           libretro 通用宿主
-games/bubble/              泡泡龙业务层（逻辑 / 渲染 / AI / 入口 / 元数据）
-examples/m1_demo/          M1 演示 + 自检
-examples/hello_game/       公共 API 边界探针
-tests/                     主机侧一致性测试与 golden 数据
+engine/                    引擎（自带 CMakeLists，可独立成仓）
+  include/hge/             公共头（types / gfx / audio / resource / system / app / libretro）
+  src/{core,gfx,audio,resource,platform,host}/   实现，对游戏不可见
+  examples/m1_demo/        M1 演示 + 自检
+  examples/hello_game/     公共 API 边界探针（只能 include 公共头）
+  tests/                   引擎一致性测试（gfx conformance）
+  tools/                   pack_exe.py（把 pak 追加到可执行文件尾部）、调试脚本
+games/bubble/              泡泡龙（只经 hge 目标消费引擎）
+  src/app/bubble/          逻辑 / 渲染 / AI / 入口 / 元数据
+  assets/                  game.pak + audio.pak（本游戏资产）
+  tools/                   资产烘焙与抽帧脚本
+  tests/                   golden 数据与 32 seed 回归脚本
+  package/                 Miyoo 部署包模板
 docs/                      架构/测试/移植说明
 cmake/toolchains/          Miyoo / MinGW 交叉工具链
+third_party/SDL2/          SDL2 源码（桌面静态构建；设备用 libs/ 预编译版）
+libs/                      设备用预编译 SDL2
+bench_tools/               掌机热点/SSH 工具
 CMakePresets.json          linux-native / miyoo-cross / libretro-* / windows-mingw
 NOTICE / LICENSE-HGE.txt   zlib 授权要求的"修改版声明"与原始许可
 ```
@@ -186,14 +191,14 @@ build\Release\bubble_level1.exe --warmup 40 --shot a.ppm   # 预演40发后截�
 
 | 元素 | 来源 | 处理 |
 |---|---|---|
-| 泡泡 | FSM 图块（苔藓/岩壁/芦苇/壁草/洞窟石/珊瑚） | `make_bubble()`：玻璃球壳 + 内芯纹理，见 `tools/preview_assets.py` |
+| 泡泡 | FSM 图块（苔藓/岩壁/芦苇/壁草/洞窟石/珊瑚） | `make_bubble()`：玻璃球壳 + 内芯纹理，见 `games/bubble/tools/preview_assets.py` |
 | 背景 | `parallax_Resource_Pack/ForestNight.png`（816x816 俯视树冠） | 裁成 960x540、高斯模糊、压暗 |
-| 炮台 | 程序化（石座 + 木桶，带铁箍） | `tools/bake_game_assets.py` |
+| 炮台 | 程序化（石座 + 木桶，带铁箍） | `games/bubble/tools/bake_game_assets.py` |
 | 字体 | Consolas 18px 烘成 16x6 图集 | 整数倍缩放绘制（<1 倍会丢笔画） |
 | 粒子 | 程序化柔光点 / 圆环 | 同一个 pak |
 
-全部烘焙进 `assets/game.pak`（2.3MB，BGRA 原始像素，运行时零解码依赖）。
-换素材只需改 `tools/bake_game_assets.py` 里的坐标再跑一次。
+全部烘焙进 `games/bubble/assets/game.pak`（2.3MB，BGRA 原始像素，运行时零解码依赖）。
+换素材只需改 `games/bubble/tools/bake_game_assets.py` 里的坐标再跑一次。
 
 ## 自检验证了什么
 
@@ -214,7 +219,7 @@ ctest --test-dir build-native --output-on-failure
 ./build-native/bubble_level1 --selftest
 ./build-native/bubble_level1 --sim-only 5
 ./build-native/bubble_level1 --render-test --frames 60 --shot /tmp/a.ppm
-./build-native/bubble_level1 --render-test --frames 46 --replay tests/replay/smoke.txt
+./build-native/bubble_level1 --render-test --frames 46 --replay games/bubble/tests/replay/smoke.txt
 ```
 
 详见 `docs/TESTING.md`：分层测试、确定性渲染、replay 格式、golden 更新流程。
@@ -222,7 +227,7 @@ ctest --test-dir build-native --output-on-failure
 
 ## Miyoo 部署与真机调试
 
-- 部署包结构与完整步骤：`package/DEPLOY.md`
+- 部署包结构与完整步骤：`games/bubble/package/DEPLOY.md`
 - 热点/SSH 工具目录：`bench_tools/README.md`
   （`miyoo_connect.sh`、`miyoo_bench_hotspot.sh`、设备端 `bench_hotspot_*.sh`）
 - 退出游戏后会自动重跑 `bench_hotspot_boot.sh` 恢复热点，不需要重启机器。
