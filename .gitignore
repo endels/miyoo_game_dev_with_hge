@@ -34,3 +34,7 @@ __pycache__/
 # Generated BGM sources (rebuild with tools/make_bgm.py)
 /tools/bgm/*.wav
 !/tools/bgm/music_redo_chip.wav
+
+# DSH agent handoff notes (local only)
+/DSH-README.md
+/docs/dsh-wsl-handoff.md
