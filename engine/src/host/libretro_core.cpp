@@ -183,6 +183,9 @@ void retro_run(void)
     g_prevButtons = held;
     plat_libretro_set_buttons(held, pressed);
 
+#if HGE_FEATURE_AUDIO
+    static double accMix = 0.0, accPush = 0.0;
+#endif
     const double tStep0 = nowSec();
     const bool alive = plat_libretro_step() != 0;
     const double tStep1 = nowSec();
@@ -196,6 +199,7 @@ void retro_run(void)
     const void* fb = BlitFramebuffer(&w, &h, &pitch);
     if (fb && video_cb)
         video_cb(fb, (unsigned)w, (unsigned)h, (size_t)pitch);
+    const double tVideo1 = nowSec();
 
 #if HGE_FEATURE_AUDIO
     // Generate audio for the real elapsed time. The frontend owns the device
@@ -215,6 +219,7 @@ void retro_run(void)
     int frames = (int)acc;
     acc -= (double)frames;
     if (frames > 8192) frames = 8192;
+    const double tAud0 = nowSec();
     if (frames > 0) {
         audio::Fill(abuf, frames, 2);
         static int audioLog = 0;
@@ -226,7 +231,10 @@ void retro_run(void)
             }
             fprintf(stderr, "[core] audio frames=%d peak=%d\n", frames, peak);
         }
+        const double tMix1 = nowSec();
         if (audio_batch_cb) audio_batch_cb(abuf, (size_t)frames);
+        accMix += tMix1 - tAud0;
+        accPush += nowSec() - tMix1;
     }
 #endif
 
@@ -242,17 +250,27 @@ void retro_run(void)
         ++fc;
     }
     {
-        static double accStep = 0, accAud = 0, accCall = 0;
+        static double accStep = 0, accVideo = 0, accCall = 0;
         static int perfLog = 0;
         const double tAud = nowSec();
-        accStep += tStep1 - tStep0;
-        accAud  += tAud - tStep1;
-        accCall += tAud - tStep0;
+        accStep  += tStep1 - tStep0;
+        accVideo += tVideo1 - tStep1;   // video_cb: the frontend's frame upload
+        accCall  += tAud - tStep0;
         if (++perfLog % 120 == 0) {
-            fprintf(stderr, "[core] perf step=%.1fms audio=%.1fms call=%.1fms\n",
-                    accStep / 120 * 1000.0, accAud / 120 * 1000.0,
-                    accCall / 120 * 1000.0);
-            accStep = accAud = accCall = 0;
+#if HGE_FEATURE_AUDIO
+            const double n = 120.0;
+            fprintf(stderr,
+                    "[core] perf step=%.1f video=%.1f mix=%.1f push=%.1f call=%.1f ms\n",
+                    accStep / n * 1000.0, accVideo / n * 1000.0,
+                    accMix / n * 1000.0, accPush / n * 1000.0,
+                    accCall / n * 1000.0);
+            accMix = accPush = 0.0;
+#else
+            fprintf(stderr, "[core] perf step=%.1f video=%.1f call=%.1f ms\n",
+                    accStep / 120.0 * 1000.0, accVideo / 120.0 * 1000.0,
+                    accCall / 120.0 * 1000.0);
+#endif
+            accStep = accVideo = accCall = 0;
         }
     }
 

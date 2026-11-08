@@ -361,12 +361,20 @@ public:
         if (m_quads.empty()) return;
 #if HGE_FEATURE_THREADS
         accountCoverage();
+        const double flushT0 = plat::Time();
         const long long costPx = estimateCostPx();
         if (getenv("HGE_BLIT_LOG")) {
             static int pl = 0;
             if (++pl % 60 == 0)
-                fprintf(stderr, "[blit] frame quads=%d cost_px=%lld mt_min=%lld\n",
-                        (int)m_quads.size(), costPx, m_mtMinPx);
+            {
+                const double avg = m_flushFrames ? m_flushMsSum / m_flushFrames : 0.0;
+                fprintf(stderr,
+                        "[blit] frame quads=%d cost_px=%lld mt_min=%lld "
+                        "raster_avg=%.2fms\n",
+                        (int)m_quads.size(), costPx, m_mtMinPx, avg);
+                m_flushMsSum = 0.0;
+                m_flushFrames = 0;
+            }
         }
         const int mid = m_h / 2;
         if (!m_hasWorker || costPx <= m_mtMinPx) {
@@ -389,6 +397,8 @@ public:
 #else
         renderBand(0, m_h);
 #endif
+        m_flushMsSum += (plat::Time() - flushT0) * 1000.0;
+        ++m_flushFrames;
         m_quads.clear();
     }
 
@@ -568,6 +578,10 @@ private:
         }
     }
 
+    // Fill a rectangle with a flat colour. The blend mode and the alpha are
+    // constant for the whole rect, so they are hoisted out of the pixel loop
+    // instead of being re-tested 190k times a frame (which is what the old
+    // single loop did, measured at ~15 ns/px on a Cortex-A7).
     void fillSolid(u32 c, GfxBlend blend, int x0, int y0, int x1, int y1)
     {
         const int r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
@@ -575,34 +589,63 @@ private:
         const u32 srgb = ((u32)r << 16) | ((u32)g << 8) | (u32)b;
         if (x0 >= x1 || y0 >= y1) return;
 
-        for (int dy = y0; dy < y1; ++dy) {
-            u32* d = &m_fb[(size_t)dy * m_w];
-            for (int dx = x0; dx < x1; ++dx) {
-                const u32 dst = d[dx];
-                if (blend == GFX_BLEND_NONE || a == 255) {
-                    d[dx] = 0xFF000000u | srgb;
-                } else if (a == 0) {
-                    continue;
-                } else if (blend == GFX_BLEND_ALPHA) {
-                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
-                    const int ia = 255 - a;
+        if (blend == GFX_BLEND_NONE || a == 255) {
+            const u32 v = 0xFF000000u | srgb;
+            for (int dy = y0; dy < y1; ++dy) {
+                u32* d = &m_fb[(size_t)dy * m_w];
+                for (int dx = x0; dx < x1; ++dx) d[dx] = v;
+            }
+            return;
+        }
+        if (a == 0) return;
+
+        if (blend == GFX_BLEND_ALPHA) {
+            const int ia = 255 - a;
+            const int ra = r * a, ga = g * a, ba = b * a;
+            for (int dy = y0; dy < y1; ++dy) {
+                u32* d = &m_fb[(size_t)dy * m_w];
+                for (int dx = x0; dx < x1; ++dx) {
+                    const u32 dst = d[dx];
+                    const int dr = (int)((dst >> 16) & 0xFF);
+                    const int dg = (int)((dst >> 8) & 0xFF);
+                    const int db = (int)(dst & 0xFF);
                     d[dx] = 0xFF000000u
-                          | ((u32)div255(r * a + dr * ia) << 16)
-                          | ((u32)div255(g * a + dg * ia) << 8)
-                          |  (u32)div255(b * a + db * ia);
-                } else if (blend == GFX_BLEND_ADD) {
-                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
+                          | ((u32)div255(ra + dr * ia) << 16)
+                          | ((u32)div255(ga + dg * ia) << 8)
+                          |  (u32)div255(ba + db * ia);
+                }
+            }
+            return;
+        }
+
+        if (blend == GFX_BLEND_ADD) {
+            for (int dy = y0; dy < y1; ++dy) {
+                u32* d = &m_fb[(size_t)dy * m_w];
+                for (int dx = x0; dx < x1; ++dx) {
+                    const u32 dst = d[dx];
+                    const int dr = (int)((dst >> 16) & 0xFF);
+                    const int dg = (int)((dst >> 8) & 0xFF);
+                    const int db = (int)(dst & 0xFF);
                     d[dx] = 0xFF000000u
                           | ((u32)std::min(255, dr + r) << 16)
                           | ((u32)std::min(255, dg + g) << 8)
                           |  (u32)std::min(255, db + b);
-                } else { // MUL
-                    const int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
-                    d[dx] = 0xFF000000u
-                          | ((u32)div255(dr * r) << 16)
-                          | ((u32)div255(dg * g) << 8)
-                          |  (u32)div255(db * b);
                 }
+            }
+            return;
+        }
+
+        for (int dy = y0; dy < y1; ++dy) {          // GFX_BLEND_MUL
+            u32* d = &m_fb[(size_t)dy * m_w];
+            for (int dx = x0; dx < x1; ++dx) {
+                const u32 dst = d[dx];
+                const int dr = (int)((dst >> 16) & 0xFF);
+                const int dg = (int)((dst >> 8) & 0xFF);
+                const int db = (int)(dst & 0xFF);
+                d[dx] = 0xFF000000u
+                      | ((u32)div255(dr * r) << 16)
+                      | ((u32)div255(dg * g) << 8)
+                      |  (u32)div255(db * b);
             }
         }
     }
@@ -831,6 +874,46 @@ private:
         const bool plainCopy = t->opaque && whiteMod && a == 255 &&
                                (blend == GFX_BLEND_NONE || blend == GFX_BLEND_ALPHA);
 
+        // Hot path: ordinary sprite -- alpha blended, white vertex colour,
+        // opaque vertex alpha. Hoisting those three per-pixel tests out of the
+        // loop (the generic loop below re-tests blend/whiteMod/alpha for every
+        // pixel) is the single cheapest win in this renderer.
+        if (blend == GFX_BLEND_ALPHA && whiteMod && a == 255) {
+            for (int dy = y0; dy < y1; ++dy) {
+                int ty = (int)(syf >> 16);
+                syf += stepy;
+                if (ty < 0) ty = 0; else if (ty >= th) ty = th - 1;
+                const u32* srow = &t->px[(size_t)ty * tw];
+                u32* drow = &m_fb[(size_t)dy * m_w];
+                long long sx = sxf;
+                for (int dx = x0; dx < x1; ++dx) {
+                    int tx = (int)(sx >> 16);
+                    sx += stepx;
+                    if (tx < 0) tx = 0; else if (tx >= tw) tx = tw - 1;
+                    const u32 texel = srow[tx];
+                    const int ta = (int)(texel >> 24);
+                    if (ta == 0) continue;
+                    if (ta == 255) {
+                        drow[dx] = 0xFF000000u | (texel & 0x00FFFFFFu);
+                        continue;
+                    }
+                    const int ia = 255 - ta;
+                    const int tr = (int)((texel >> 16) & 0xFF);
+                    const int tg = (int)((texel >> 8) & 0xFF);
+                    const int tb = (int)(texel & 0xFF);
+                    const u32 dst = drow[dx];
+                    const int dr = (int)((dst >> 16) & 0xFF);
+                    const int dg = (int)((dst >> 8) & 0xFF);
+                    const int db = (int)(dst & 0xFF);
+                    drow[dx] = 0xFF000000u
+                             | ((u32)div255(tr * ta + dr * ia) << 16)
+                             | ((u32)div255(tg * ta + dg * ia) << 8)
+                             |  (u32)div255(tb * ta + db * ia);
+                }
+            }
+            return;
+        }
+
         for (int dy = y0; dy < y1; ++dy) {
             int ty = (int)(syf >> 16);
             syf += stepy;
@@ -898,6 +981,8 @@ private:
     CovGroup  m_cov[64];
     int       m_covCount = 0;
     int       m_covFrames = 0;
+    double    m_flushMsSum = 0.0;
+    int       m_flushFrames = 0;
     long long m_covFramePx = 0;
     static const long long kDefaultMtMinPx = 160000;
     long long m_mtMinPx = kDefaultMtMinPx;

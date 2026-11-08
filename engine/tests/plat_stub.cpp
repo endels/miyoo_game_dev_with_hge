@@ -3,9 +3,20 @@
 
 #include "platform/plat.h"
 
+#include <ctime>
+
 namespace plat {
 
 int Width()  { return 960; }
 int Height() { return 540; }
+
+// gfx_blit times its own flush for the HGE_BLIT_LOG diagnostics, so the stub
+// needs a clock too.
+double Time()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 
 } // namespace plat
