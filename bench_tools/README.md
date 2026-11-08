@@ -49,6 +49,19 @@ Onion 的 WiFi 开关为开启状态。这样不需要每次退出游戏都重�
 
 ## 常见问题
 
+- **过一会儿 SSH 就连不上（Connection timed out）**：热点还活着，是 **Windows 把隐藏 AP
+  的关联丢了**。`netsh wlan show interfaces` 会显示「已断开连接」。重跑一次即可，约 20 秒：
+  ```bash
+  ./miyoo_connect.sh --force
+  ```
+  注意设备的 AP 是**隐藏 SSID**，`netsh wlan show networks` **扫不到它** —— 扫不到不代表
+  热点没起来，直接按 profile 连就行。
+- **部署被拒绝，说目录不是本脚本建的**：目标目录已存在且没有 `.hge_deploy` 标记
+  （例如手动放进去的 App）。先备份、让它腾位再部署：
+  ```bash
+  ssh miyoo 'cd /mnt/SDCARD/App && mv Bubble Bubble.bak'
+  ./miyoo_deploy_app.sh /path/to/App/Bubble Bubble
+  ```
 - **Windows 一直停在“正在验证”**：旧 WLAN profile 可能缓存了错误密码。删除后重连：
   ```powershell
   netsh.exe wlan delete profile name="MiyooMiniAP"
