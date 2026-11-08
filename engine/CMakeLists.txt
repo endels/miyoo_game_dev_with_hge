@@ -238,6 +238,19 @@ if(HGE_HOST STREQUAL "standalone")
     endif()
 endif()
 
+# Renderer throughput probe. Engine-internal: it drives plat:: directly so each
+# stage (submit+rasterize vs present) can be timed without frame pacing hiding
+# the cost. Built for any standalone target, desktop or device.
+if(HGE_HOST STREQUAL "standalone")
+    add_executable(quadbench "${CMAKE_CURRENT_SOURCE_DIR}/tools/quadbench/main.cpp")
+    target_include_directories(quadbench PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(quadbench PRIVATE hge)
+    hge_set_warnings(quadbench)
+    if(MINGW)
+        target_link_options(quadbench PRIVATE -static -static-libgcc -static-libstdc++)
+    endif()
+endif()
+
 # ---------------------------------------------------------------------------
 # Engine self-tests (never cross-compiled)
 # ---------------------------------------------------------------------------
