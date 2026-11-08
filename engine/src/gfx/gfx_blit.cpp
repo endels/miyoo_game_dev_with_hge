@@ -179,8 +179,26 @@ public:
 
     void SetScissor(int x, int y, int w, int h) override
     {
-        if (w > 0 && h > 0) { m_clip = true; m_cx = x; m_cy = y; m_cw = w; m_ch = h; }
-        else m_clip = false;
+        if (w > 0 && h > 0) {
+            m_clip = true;
+            // The scissor arrives in the logical space the quads are written in,
+            // but the rasterizer clips in framebuffer pixels, so it has to go
+            // through the same logical -> framebuffer transform the vertices do.
+            // Without this every clip is off by the scale whenever the
+            // framebuffer size differs from the logical size -- on the Miyoo
+            // libretro build that is 640x480 fb for a 960x540 draw space, so all
+            // scissor rects were 1.5x too large and displaced: the board's top
+            // row was not clipped away and the AI board's clip ran off its own
+            // area.
+            m_cx = (int)lroundf(m_ox + (float)x * m_s);
+            m_cy = (int)lroundf(m_oy + (float)y * m_s);
+            m_cw = (int)lroundf((float)w * m_s);
+            m_ch = (int)lroundf((float)h * m_s);
+            if (m_cw < 1) m_cw = 1;
+            if (m_ch < 1) m_ch = 1;
+        } else {
+            m_clip = false;
+        }
     }
 
     void SetTransform(f32 x, f32 y, f32 dx, f32 dy,
@@ -309,11 +327,18 @@ public:
     bool ReadPixels(int x, int y, int w, int h, u32* outArgb) override
     {
         if (!outArgb || w <= 0 || h <= 0) return false;
+        // Reading the framebuffer must include the quads still queued for this
+        // frame, otherwise --shot captures an empty frame.
+        FlushFrame();
+        // The rect is in logical coordinates, so sample through the same
+        // transform the vertices went through. That keeps a blit screenshot
+        // directly comparable with the GL one even when the framebuffer is a
+        // different size (libretro: 640x480 fb, 960x540 draw space).
         for (int j = 0; j < h; ++j) {
-            const int sy = y + j;
+            const int sy = (int)lroundf(m_oy + ((float)(y + j) + 0.5f) * m_s);
             if (sy < 0 || sy >= m_h) { memset(outArgb + (size_t)j * w, 0, (size_t)w * 4); continue; }
             for (int i = 0; i < w; ++i) {
-                const int sx = x + i;
+                const int sx = (int)lroundf(m_ox + ((float)(x + i) + 0.5f) * m_s);
                 outArgb[(size_t)j * w + i] =
                     (sx >= 0 && sx < m_w) ? m_fb[(size_t)sy * m_w + sx] : 0u;
             }

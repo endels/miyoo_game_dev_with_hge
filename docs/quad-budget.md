@@ -115,26 +115,26 @@
 2. **跳过整屏 `Clear()`**：画面本身铺满全屏时清屏是白做的，省约 0.7 ms。
 3. 动画/特效不要用实时旋转（4.36 倍单价），预烘焙角度帧。
 
-## 结论四（意外发现）：`SetScissor` 在缩放时不跟着缩放
+## 结论四（已修复）：`SetScissor` 曾经不跟着缩放
 
 `plain` 和 `scissor` 本该一样贵，但在 **logical 960×540 / 帧缓冲 640×480** 的配置下，
 `scissor` 场景 2048 个 quad 只要 **0.090 ms**——比 `plain` 快 40 倍。原因是裁剪矩形
-按**帧缓冲像素**解释、而 quad 坐标是 **logical**，于是绝大多数 quad 被裁掉了。
+按**帧缓冲像素**解释、而 quad 顶点走的是 `logical -> framebuffer` 变换，于是裁剪区
+被整体放大并位移了 1.5 倍，绝大多数 quad 被裁掉了。
 
-复现：
+**这不是理论问题，实机上就是两个可见 bug**（设备 libretro 核心交出的正是 640×480
+缓冲 + 960×540 画布）：右侧 AI 板被挤成最右边一条 1/3 宽的竖条、顶部那行球该被
+棋盘框裁掉却完整露出来。
 
-```bash
-# 慢（真实渲染）：logical == 帧缓冲
-HGE_OFFSCREEN=1 HGE_IMMEDIATE=1 ./quadbench --size 640x480 --quads 512 --scenarios scissor
-#   scissor,512,1.796 ms
-# 快（全部被裁掉）：logical != 帧缓冲
-HGE_OFFSCREEN=1 HGE_IMMEDIATE=1 ./quadbench --size 960x540 --quads 512 --scenarios scissor
-#   scissor,512,0.038 ms
-```
+修法：`SetScissor` 里把矩形过一遍与顶点相同的变换（`m_ox + x*m_s` 等），
+并把 `ReadPixels` 也改成先 `FlushFrame()` 再按同一个变换采样——这样
+`--shot` 出来的 blit 截图能和 GL 逐像素对齐比较（修复前 blit 截图是空白的，
+因为读的是刷新前的缓冲）。
 
-这条还没确认是否影响发货路径：libretro 那条链里核心交给前端的缓冲是不是就是
-960×540（即 logical == 缓冲）需要单独核。如果存在缩放，游戏里所有 `SetScissor`
-裁剪区都会偏 1.5 倍。
+回归守卫：`engine/tests/gfx_conformance_blit.cpp` 的 2b 用例固定了
+「logical (0,0,320,180) -> fb (0,60,213,120)」这条映射，旧代码跑它会 FAIL。
+
+修复前后与 GL 参考图（同状态）的像素差：**8.22% -> 4.42%**。
 
 ## 对横板过关的直接含义
 

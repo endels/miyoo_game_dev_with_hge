@@ -81,6 +81,26 @@ int main()
     if (pixel(fb, pitch, 500, 300) != 0xFF000000)
         fail("scissor outside", pixel(fb, pitch, 500, 300), 0xFF000000);
 
+    // 2b. the scissor is given in logical coordinates and must go through the
+    // same logical -> framebuffer transform as the vertices. 320x180 logical
+    // maps to 213x120 fb pixels starting at row 60 (letterboxed 960x540 ->
+    // 640x480). Regression guard: an unscaled scissor would paint above row 60
+    // and out to x=320.
+    g->BeginFrame();
+    g->Clear(0xFF000000);
+    g->SetScissor(0, 0, 320, 180);
+    g->SetBlend(GFX_BLEND_NONE);
+    drawFull(g, nullptr, 0xFF00FFFF);
+    g->SetScissor(0, 0, 0, 0);
+    g->EndFrame();
+    fb = BlitFramebuffer(&w, &h, &pitch);
+    if (pixel(fb, pitch, 100, 100) != 0xFF00FFFF)
+        fail("scissor scaled inside", pixel(fb, pitch, 100, 100), 0xFF00FFFF);
+    if (pixel(fb, pitch, 100, 30) != 0xFF000000)
+        fail("scissor scaled above band", pixel(fb, pitch, 100, 30), 0xFF000000);
+    if (pixel(fb, pitch, 300, 100) != 0xFF000000)
+        fail("scissor scaled right of band", pixel(fb, pitch, 300, 100), 0xFF000000);
+
     // 3. texture upload
     u32 texpx[4] = { 0xFF00FF00u, 0xFF00FF00u, 0xFF00FF00u, 0xFF00FF00u };
     IGfxTexture* tex = g->CreateTexture(2, 2, texpx, 8);
