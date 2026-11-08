@@ -6,6 +6,7 @@
 /build-native-nothreads/
 /build-dbg/
 /build-win-mingw/
+/build-win-make/
 /CMakeFiles/
 /CMakeCache.txt
 CMakeUserPresets.json
