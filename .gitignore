@@ -1,12 +1,6 @@
-# Build outputs
-/build-miyoo/
-/build-libretro/
-/build-libretro-x86/
-/build-native/
-/build-native-nothreads/
-/build-dbg/
-/build-win-mingw/
-/build-win-make/
+# Build outputs — one glob so a new build directory can never leak in.
+# This is a safety net, not a licence: check `git status --short` before commit.
+/build-*/
 /CMakeFiles/
 /CMakeCache.txt
 CMakeUserPresets.json
@@ -14,15 +8,15 @@ CMakeUserPresets.json
 *.d
 *.a
 
-# Deploy build outputs
-/package/App/Bubble/bin/
-/package/App/Bubble/bubble_libretro.so
+# Deploy build outputs (per-game package, filled in by the deploy step)
+/games/bubble/package/App/Bubble/bin/
+/games/bubble/package/App/Bubble/bubble_libretro.so
 
 # Generated / runtime files
-/package/App/Bubble/ra_append.cfg
-/package/App/Bubble/*.log
-/package/App/Bubble/*.ppm
-/package/App/Bubble/fb*.bin
+/games/bubble/package/App/Bubble/ra_append.cfg
+/games/bubble/package/App/Bubble/*.log
+/games/bubble/package/App/Bubble/*.ppm
+/games/bubble/package/App/Bubble/fb*.bin
 *.log
 *.ppm
 fb*.bin
@@ -32,12 +26,10 @@ hello.ko
 __pycache__/
 *.py[cod]
 
-# Generated BGM sources (rebuild with tools/make_bgm.py)
-/tools/bgm/*.wav
-!/tools/bgm/music_redo_chip.wav
+# Generated BGM sources (rebuild with games/bubble/tools/make_bgm.py)
+/games/bubble/tools/bgm/*.wav
+!/games/bubble/tools/bgm/music_redo_chip.wav
 
 # DSH agent handoff notes (local only)
 /DSH-README.md
 /docs/dsh-wsl-handoff.md
-/build-bench/
-/build-bench-arm/
